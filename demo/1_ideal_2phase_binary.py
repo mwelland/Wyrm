@@ -26,6 +26,8 @@ mesh = RectangleMesh(round(Lx/mesh_res), round(Ly/mesh_res), Lx/x_scale, Ly/x_sc
 def gr(x):
     return grad(x)/x_scale
 
+print('hi')
+
 n = 2
 m = 2
 
