@@ -1,6 +1,6 @@
 from firedrake import *
 from tools import *
-import thermodynamic_potentials as tp
+import thermo_potentials as tp
 from math import log, ceil
 
 from firedrake.petsc import PETSc
@@ -25,8 +25,6 @@ mesh = RectangleMesh(round(Lx/mesh_res), round(Ly/mesh_res), Lx/x_scale, Ly/x_sc
 # utility function to help with non-dimensionalization
 def gr(x):
     return grad(x)/x_scale
-
-print('hi')
 
 n = 2
 m = 2
