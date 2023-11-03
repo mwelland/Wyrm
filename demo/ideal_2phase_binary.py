@@ -26,12 +26,12 @@ mesh = RectangleMesh(round(Lx/mesh_res), round(Ly/mesh_res), Lx/x_scale, Ly/x_sc
 def gr(x):
     return grad(x)/x_scale
 
+#n - number of species, m = number of phases
 n = 2
 m = 2
 
 xmesh = SpatialCoordinate(mesh)
 x = xmesh*x_scale
-
 
 V_phase = FunctionSpace(mesh, "CG", 1, name="phases")
 V_species = VectorFunctionSpace(mesh, "CG", 1, dim=n, name ="species")
@@ -50,7 +50,7 @@ p_phase = phase**3*(6*phase**2-15*phase+10)
 g_phase = phase**2*(1-phase)**2
 interface_area = 3*( interface_width**2*inner(gr(phase),gr(phase)) + g_phase)
 
-ps = as_vector([phase, 1-phase])
+ps = as_vector([p_phase, 1-p_phase])
 
 # Load potential
 import numpy as np
@@ -66,7 +66,7 @@ pot_grad = lambda x: -G@x +mu0
 
 
 
-response = pot_grad([c_scale*cmesh[0], c_scale*cmesh[1]]+[phase, 1-phase])   #Fixme - shouldn't be negative
+response = pot_grad([c_scale*cmesh[0], c_scale*cmesh[1]]+[p_phase, 1-p_phase])   #Fixme - shouldn't be negative
 
 mu = as_vector(response[:n])
 P = as_vector(response[n:])
