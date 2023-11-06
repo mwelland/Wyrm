@@ -49,24 +49,17 @@ c = c_scale*cmesh
 p_phase = phase**3*(6*phase**2-15*phase+10)
 g_phase = phase**2*(1-phase)**2
 interface_area = 3*( interface_width**2*inner(gr(phase),gr(phase)) + g_phase)
+interface_energy = 1000
 
 ps = as_vector([p_phase, 1-p_phase])
 
 # Load potential
-import numpy as np
-G = np.array([[-2,        0,     0.54,      1.5],
- [       0,       -2,      1.5,     0.54],
- [    0.54,      1.5,     -1.2,    -0.79],
- [     1.5,     0.54,    -0.79,     -1.2]])
-mu0 = np.array(
- [   -0.31,    -0.31,  1.6e-15, -1.6e-15]
- )
-pot_grad = lambda x: -G@x +mu0
+
+pot = tp.load_potential('binary_2phase_elastic')
 
 
 
-
-response = pot_grad([c_scale*cmesh[0], c_scale*cmesh[1]]+[p_phase, 1-p_phase])   #Fixme - shouldn't be negative
+response = pot.grad([c_scale*cmesh[0], c_scale*cmesh[1]]+[p_phase, 1-p_phase])   #Fixme - shouldn't be negative
 
 mu = as_vector(response[:n])
 P = as_vector(response[n:])
@@ -77,7 +70,7 @@ F_diffusion = inner(J, gr(test_c))*dx
 F_diffusion = 1/c_scale*F_diffusion
 
 F_phase = -M_phi*inner(P, derivative(ps, phase, test_phase))*dx
-F_phase += -M_phi*derivative(interface_area, phase, test_phase)*dx
+F_phase += -M_phi*derivative(interface_energy*interface_area, phase, test_phase)*dx
 
 F = F_diffusion + F_phase
 

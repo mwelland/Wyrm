@@ -38,6 +38,7 @@ Thumbs.db
 
 #Python extensions
 *.pyc
+*.pkl
 
 #Firedrake files and outputs
 *.vtu
