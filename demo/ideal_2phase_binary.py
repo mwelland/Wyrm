@@ -8,8 +8,8 @@ def print(*args, **kwargs):
     #Overloads print to be the petsc routine which relegates to the head mpi rank
     PETSc.Sys.Print(*args,flush=True)
 
-M_phi = 1#1e-8
-D = 1 #m^2/s = .1 cm^2/s
+M_phi = 1e-3#1e-8
+D = 1e-3 #m^2/s = .1 cm^2/s
 interface_width = .1
 
 x_scale = 1
@@ -49,15 +49,13 @@ c = c_scale*cmesh
 p_phase = phase**3*(6*phase**2-15*phase+10)
 g_phase = phase**2*(1-phase)**2
 interface_area = 3*( interface_width**2*inner(gr(phase),gr(phase)) + g_phase)
-interface_energy = 1000
+interface_energy = 5000
 
 ps = as_vector([p_phase, 1-p_phase])
 
 # Load potential
 
 pot = tp.load_potential('binary_2phase_elastic')
-
-
 
 response = pot.grad([c_scale*cmesh[0], c_scale*cmesh[1]]+[p_phase, 1-p_phase])   #Fixme - shouldn't be negative
 
@@ -81,9 +79,16 @@ params = {'snes_monitor': None,
           'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
           }
 
-# Autopopulate based on minimizers?
-ci0 = as_vector([.2, .8])
-ci1 = as_vector([.8, .2])
+# Since using a quadratic potential, we can just get initial values from expansion point
+pt = pot.additional_fields['expansion_point']
+print(pt)
+
+ci_a = as_vector([pt['c0_a'], pt['c1_a']])/pt['V_a']
+ci_b = as_vector([pt['c0_b'], pt['c1_b']])/pt['V_b']
+print(ci_a)
+print(ci_b)
+# ci0 = as_vector([.2, .8])
+# ci1 = as_vector([.8, .2])
 
 # ~~~ Initial conditions ~~~ #
 rc = 0*as_vector([1,1])
@@ -94,7 +99,7 @@ p0 = (.5*(1.-tanh((r-.5*Lx)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.
 
 U.sub(1).interpolate(p0)
 
-ic = p0*(1+0*1e-3)*ci0+(1-p0)*ci1
+ic = p0*(1+0*1e-3)*ci_a+(1-p0)*ci_b
 U.sub(0).interpolate(ic/c_scale)
 
 # Boundary conditions
