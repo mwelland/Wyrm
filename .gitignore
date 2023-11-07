@@ -43,3 +43,5 @@ Thumbs.db
 #Firedrake files and outputs
 *.vtu
 *.pvd
+*.pvt
+*.pvtu
