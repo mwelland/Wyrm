@@ -2,20 +2,27 @@ from firedrake import *
 from tools import *
 import thermo_potentials as tp
 from math import log, ceil
-
+import sys
 from firedrake.petsc import PETSc
+
+nSpecies = int(sys.argv[1])
+nPhases = int(sys.argv[2])
+xLength = int(sys.argv[3])
+interface_width = float(sys.argv[4])
+
+
 def print(*args, **kwargs):
     #Overloads print to be the petsc routine which relegates to the head mpi rank
     PETSc.Sys.Print(*args,flush=True)
 
 M_phi = 1e-3#1e-8
 D = 1e-3 #m^2/s = .1 cm^2/s
-interface_width = .2
+#interface_width = .2
 
 x_scale = 1
 c_scale = 1
 
-Lx = 100
+Lx = xLength
 Ly = Lx/1
 Lz = Lx/1
 
@@ -51,8 +58,8 @@ def gr(x):
     return grad(x)/x_scale
 
 #n - number of species, m = number of phases
-n = 2
-m = 2
+n = nSpecies
+m = nPhases
 
 xmesh = SpatialCoordinate(mesh)
 x = xmesh*x_scale
