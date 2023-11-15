@@ -5,6 +5,9 @@ from math import log, ceil
 import sys
 from firedrake.petsc import PETSc
 
+nSpecies = int(sys.argv[1])
+nPhases = int(sys.argv[2])
+xLength = int(sys.argv[3])
 
 
 def print(*args, **kwargs):
@@ -18,7 +21,7 @@ interface_width = .2
 x_scale = 1
 c_scale = 1
 
-Lx = 10
+Lx = xLength
 Ly = Lx/1
 Lz = Lx/1
 
@@ -54,8 +57,8 @@ def gr(x):
     return grad(x)/x_scale
 
 #n - number of species, m = number of phases
-n = 2
-m = 2
+n = nSpecies
+m = nPhases
 
 xmesh = SpatialCoordinate(mesh)
 x = xmesh*x_scale
