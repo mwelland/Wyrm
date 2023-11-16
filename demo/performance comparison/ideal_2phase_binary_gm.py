@@ -16,7 +16,7 @@ def print(*args, **kwargs):
 
 M_phi = 1e-3#1e-8
 D = 1e-3 #m^2/s = .1 cm^2/s
-interface_width = .2
+interface_width = .1
 
 x_scale = 1
 c_scale = 1
@@ -97,8 +97,8 @@ J =  -D*gr(mu)
 F_diffusion = inner(J, gr(test_c))*dx
 F_diffusion = 1/c_scale*F_diffusion
 
-F_phase = -M_phi*inner(P, derivative(ps, phase, test_phase))*dx
-F_phase += -M_phi*derivative(interface_energy*interface_area, phase, test_phase)*dx
+F_phase = -M_phi*inner(P, derivative(ps, phase, test_phase))*dx                         #bulk
+F_phase += -M_phi*derivative(interface_energy*interface_area, phase, test_phase)*dx     #interfacial
 
 F = F_diffusion + F_phase
 
