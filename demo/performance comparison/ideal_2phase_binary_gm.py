@@ -107,7 +107,8 @@ params = {'snes_monitor': None,
           'snes_atol':1e-6,
           'snes_rtol':1e-20,
           'snes_view': None,
-
+          'ksp_converged_reason': None,
+          #'snes_linesearch_type': 'bt',
           #'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
 
           'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps',
@@ -128,7 +129,7 @@ print(ci_b)
 rc = 0*as_vector([1,1,1])
 r = sqrt(inner(x-rc,x-rc))
 #p0 = (.5*(1.-tanh((x[0]-.5*Lx)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
-p0 = (.5*(1.-tanh((r-.5*10)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
+p0 = (.5*(1.-tanh((r-.2*10)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
 #pp0 = p0**3*(6*p0**2-15*p0+10)
 
 U.sub(1).interpolate(p0)
