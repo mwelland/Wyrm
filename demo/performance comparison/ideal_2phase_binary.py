@@ -26,7 +26,9 @@ Lz = Lx/1
 
 mesh_res = interface_width
 
-mesh = RectangleMesh(round(Lx/mesh_res), round(Ly/mesh_res), Lx/x_scale, Ly/x_scale)
+
+mesh = BoxMesh(round(Lx/mesh_res), round(Ly/mesh_res), round(Lz/mesh_res), Lx/x_scale, Ly/x_scale, Lz/x_scale, reorder=True)
+#mesh = RectangleMesh(round(Lx/mesh_res), round(Ly/mesh_res), Lx/x_scale, Ly/x_scale)
 # utility function to help with non-dimensionalization
 def gr(x):
     return grad(x)/x_scale
@@ -72,8 +74,8 @@ J =  -D*gr(mu)
 F_diffusion = inner(J, gr(test_c))*dx
 F_diffusion = 1/c_scale*F_diffusion
 
-F_phase = -M_phi*inner(P, derivative(ps, phase, test_phase))*dx
-F_phase += -M_phi*derivative(interface_energy*interface_area, phase, test_phase)*dx
+F_phase = -M_phi*inner(P, derivative(ps, phase, test_phase))*dx   #bulk
+F_phase += -M_phi*derivative(interface_energy*interface_area, phase, test_phase)*dx #interfacial
 
 F = F_diffusion + F_phase
 
@@ -81,6 +83,7 @@ params = {'snes_monitor': None,
           'snes_max_it': 10,
           'snes_atol':1e-6,
           'snes_rtol':1e-20,
+          'snes_view': None,
           'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
           }
 
@@ -134,7 +137,7 @@ eps_tol_t_target = eps_tol_t/2
 
 phase_old = Function(V_phase)
 
-while float(t) < t_end and iter_t<100:
+while float(t) < t_end and iter_t<10:
 
     iter_t +=1
     phase_old.assign(U.sub(1))
@@ -161,7 +164,7 @@ while float(t) < t_end and iter_t<100:
     # Time step was successful and has been accepted
     t.assign(float(t)+float(dt))
     stepper.accept_step()
-
+    stepper.solver.parameters.pop('snes_view',None)
     # Adapt the time step to some metric
     dphase = errornorm(phase,phase_old,'l10')
     print('max phase change', dphase)

@@ -111,10 +111,10 @@ params = {'snes_monitor': None,
           #'snes_linesearch_type': 'bt',
 
           #Direct
-          'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
+          #'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
 
           #Geometric multigrid
-          #'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps',
+          'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps',
           }
 
 # Since using a quadratic potential, we can just get initial values from expansion point
