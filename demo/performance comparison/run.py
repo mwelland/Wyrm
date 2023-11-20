@@ -7,7 +7,7 @@ os.system("export PYTHONPATH=$PYTHONPATH:/home/george/phaseField/")
 os.system("export PYTHONPATH=$PYTHONPATH:/home/george/phaseField/thermo_potentials")
 #os.system("source /home/george/firedrake/firedrake/bin/activate")
 nthread = np.array([8])
-Lx = np.array([1,2,3,4,15])
+Lx = np.array([6,7,8])
 
 
 
