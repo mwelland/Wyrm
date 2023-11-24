@@ -3,8 +3,10 @@ from thermo_potentials.collect import equil_partition, quadratic
 from thermo_potentials.materials.ideal_sympy_components import ideal
 
 def build_potential():
-    fa = ideal(2,[2500,0],kappa = 1000)
-    fb = ideal(2,[0,2500],kappa = 1000)
+    fa = ideal(2,[2500,0], kappa = 1000)
+    fb = ideal(2,[0,2500], kappa = 1000)
+    fi = interface_energy0/interface_width*V
+    mat_i = material(fi, 'i')
 
     pot_a = tp.sym_potential(fa, 'a')
     pot_b = tp.sym_potential(fb, 'b')
