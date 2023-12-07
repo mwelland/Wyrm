@@ -1,6 +1,6 @@
 from firedrake import *
 from tools import *
-import thermo_potentials as tp
+from thermo_potentials import load_potential
 from math import log, ceil
 from firedrake.petsc import PETSc
 
@@ -15,7 +15,7 @@ interface_width = .1
 x_scale = 1
 c_scale = 1
 
-Lx = 4
+Lx = 2
 Ly = Lx/1
 Lz = Lx/1
 
@@ -74,7 +74,7 @@ interface_energy = 5000
 ps = as_vector([p_phase, 1-p_phase])
 
 # Load potential
-pot = tp.load_potential('binary_2phase_elastic')
+pot = load_potential('binary_2phase_elastic')
 
 response = pot.grad([c_scale*cmesh[0], c_scale*cmesh[1]]+[p_phase, 1-p_phase])   #Fixme - shouldn't be negative
 
