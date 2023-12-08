@@ -1,54 +1,5 @@
 from firedrake import *
 
-
-import time
-class timer():
-    def __init__(self):
-        self.t = time.perf_counter()
-
-    def ping(self, str=None):
-        t = time.perf_counter()
-        if str:
-            print(str, t-self.t)
-        else:
-            print('Time:', t-self.t)
-        self.t = t
-
-def voigt(u):
-    return as_vector([u[i,i] for i in range(3)]
-                     + [2*u[1,2]]
-                     + [2*u[0,2]]
-                     + [2*u[0,1]])
-
-def unvoigt(u):
-    return as_matrix([[u[0],.5*u[5],.5*u[4]], [.5*u[5], u[1], .5*u[3]],[.5*u[4], .5*u[3], u[2]]])
-
-def epsd2epsd5(eps):
-    return
-
-def flc1hs(x,x0,w=[]):
-    if not w:
-        w = x0
-    xp = (x-x0)/w
-    smooth = xp**3*(6*xp**2-15*xp+10)
-    return conditional(lt(xp,0), 0, conditional(gt(xp,1),1, smooth) )
-
-def rigid_body_np(V_disp):
-    x= SpatialCoordinate(V_disp.mesh())
-    ns_full = [
-        Constant((1, 0, 0)),
-        Constant((0, 1, 0)),
-        Constant((0, 0, 1)),
-        as_vector([-x[1], x[0],     0]),
-        as_vector([-x[2],    0,  x[0]]),
-        as_vector([    0, -x[2], x[1]]),
-        ]
-    nsb_full = [interpolate(n, V_disp) for n in ns_full]
-    ns_disp = VectorSpaceBasis(nsb_full)
-    ns_disp.orthonormalize()
-    return ns_disp
-
-
 class writer:
     def __init__(self, names, field_names, fields, mesh):
         #Names of native fields and user-defined must be treated differently.
@@ -116,49 +67,62 @@ class writer:
         #[self.file.write(s,time=time) for s in get_functions(U,self.names)]
         #[self.file.write(getFcn(self.fields[i], self.field_names[i], self.mesh), time) for i in range(len(self.fields))]
 
-class timestepper:
+class time_stepper:
+    def __init__(self, time_stepping_scheme, t0 = 0, eps_tol_t = .1):
+        self.iteration_time = 0
+        self.t0 = t0
+        self.eps_tolerance_t= eps_tol_t
+        eps_tol_t_target = eps_tol_t/2
+
+
+
+
+
+
+class time_stepping_scheme:
+    # Defines an object to contain the time stepping
     def __init__(self, U, test_U, F_td, F_qs, tm, bcs=[], dt = 1., nullspace=None, bounds = None, params=[]):
+
+        V = U.function_space()
+
         self.U = U
         self.U_old = U.copy(deepcopy=True)
-        V = U.function_space()
+
         self.dUdt = Function(V)
         self.dUdt_old = Function(V)
+
         self.dU = TrialFunction(V)
+
         self.iter = 0
         self.bounds = bounds
         self.dt = Constant(dt)
 
-        F_ss = -sum(F_td)+sum(F_qs)
-        self.problem_ss = NonlinearVariationalProblem(F_ss, U, bcs=bcs)
-        self.solver_ss = NonlinearVariationalSolver(self.problem_ss, solver_parameters=params, nullspace=nullspace)
+        F_steady_state = -sum(F_td)+sum(F_qs)
+        self.problem_steady_state = NonlinearVariationalProblem(F_steady_state, U, bcs=bcs)
+        self.solver_steady_state = NonlinearVariationalSolver(self.problem_steady_state, solver_parameters=params, nullspace=nullspace)
 
-        F = inner(elem_mult(tm,(self.U-self.U_old))/self.dt, test_U)*dx +F_ss
-
+        F = inner(elem_mult(tm,(self.U-self.U_old))/self.dt, test_U)*dx + F_steady_state
         #F = inner(elem_mult(tm,(self.U-self.U_old))/self.dt, as_vector([test_U[5], test_U[6], test_U[2],0,0,0,0,0,0]))*dx - sum(F_td)+sum(F_qs)   #Useful for testing Diffusion
-
-
         #F = inner(elem_mult(tm,(self.U-self.U_old)), test_U)*dx - self.dt*sum(F_td)+sum(F_qs)
         self.problem = NonlinearVariationalProblem(F, U, bcs=bcs)
         self.solver = NonlinearVariationalSolver(self.problem, solver_parameters=params, nullspace=nullspace)
 
     def step(self, dt):
         self.dt.assign(dt)
+        #self.t.assign(self.t + dt)
+
         self.iter += 1
-        so = self.solver.solve(bounds = self.bounds) #If this errors out, nothing else will execute
-        # Only reach this point if solve was successful
+        so = self.solver.solve(bounds = self.bounds)
+
         self.dUdt.assign(self.U)
         self.dUdt-=self.U_old
         self.dUdt/=self.dt(0)
 
         #** Not sure why needed? should be self.dUdt.assign((self.U-self.U_old)/self.dt(0))    #Calculate new dUdt
         #self.dUdt.assign((self.U-self.U_old)/self.dt(0))    #Calculate new dUdt
-        #print('tick')
         #print(errornorm(self.dUdt, self.dUdt_old)/self.dt(0)/2*self.dt(0)**2)
         eps_t = errornorm(self.dUdt, self.dUdt_old)/2*self.dt(0) #/dt*dt^2  #Estimate current rate of change of solution
-        #print('prick')
         #eps_t = norm((self.dUdt-self.dUdt_old)/self.dt(0), norm_type='l2')/2*self.dt(0)**2    #Estimate current rate of change of solution
-        #print('tock', eps_t)
-
 
         #eps_t = (self.dUdt.vector()-self.dUdt_old.vector()).max()/self.dt(0)/2*self.dt(0)**2
         #print('max change',self.dUdt.vector().max()*self.dt(0))
@@ -171,6 +135,13 @@ class timestepper:
 
     def reset_step(self):   # If the solver dies part way through U will have been changed. Need to reset before next round.
         self.U.assign(self.U_old)
+        self.dUdt.assign(self.dUdt_old)    # update old dUdt
+
+    def estimate_error_dt2(self):
+        return errornorm(self.dUdt, self.dUdt_old)/2*self.dt(0)
+
+    def estimate_error_max_change(self):
+        return self.dUdt.vector().max()
 
     def plotJac(self):
         petsc_mat = assemble(self.problem.J).M.handle    # Not sure if needed or already assembled?
@@ -196,154 +167,3 @@ class timestepper:
         return [so, eps_t, self.deltaU.vector().max()]
 
     #def take_step(self):
-
-
-
-def getGmsh(Lx, Ly, Lz, res):
-    import os.path
-    if not os.path.isfile('mesh.msh'):
-        gmshBoxMesh(Lx, Ly, Lz, res)
-
-
-def gmshBoxMesh(Lx, Ly, Lz, res):
-    import gmsh
-    gmsh.initialize()
-    gmsh.model.add("out")
-    #gmsh.model.occ.addBox(-Lx/2, -Lx/2, -Lx/2, Lx, Lx, Lx )
-    gmsh.model.occ.addBox(0, 0, 0, Lx, Lx, Lx )
-    gmsh.model.occ.synchronize()
-    gmsh.model.mesh.setSize(gmsh.model.getEntities(0), Lx/3)
-    #gmsh.model.mesh.setSize([(0, 1)], 0.2)
-    gmsh.model.mesh.generate(3)
-    gmsh.write("mesh.msh")
-    gmsh.finalize()
-
-
-# import pygmsh
-# class msh:
-#     def __init__(self, Lx, Ly, Lz, mesh_res_min, mesh_res_max=[]):
-#         #geom = pygmsh.geo.Geometry()
-#         if not mesh_res_max:
-#             mesh_res_max = 10*mesh_res_min
-#         self.Lx = Lx
-#         self.Ly = Ly
-#         self.Lz = Lz
-#         self.mesh_res_min = mesh_res_min
-#         self.mesh_res_max = mesh_res_max
-#         self.mesh_refine_pts = []
-#         with pygmsh.geo.Geometry() as geom:
-#
-#             rectangle = geom.add_rectangle(0.0, self.Lx, 0.0, self.Ly, 0, self.mesh_res_max)
-#             mesh = geom.generate_mesh(dim=2)
-#             pygmsh.write("test.msh")
-#
-#         #pygmsh.write("test.msh")
-#         #return Mesh("test.msh")
-#
-#     def refine(self, points):
-#         with pygmsh.geo.Geometry() as geom:
-#             rectangle = geom.add_rectangle(0.0, self.Lx, 0.0, self.Ly, 0, self.mesh_res_max)
-#             pts = [geom.add_point(p) for p in points]
-#             [geom.in_surface(p, rectangle) for p in pts]
-#
-#             field0 = geom.add_boundary_layer(
-#                 nodes_list=pts,
-#                 lcmin=self.mesh_res_min,
-#                 lcmax=self.mesh_res_max,
-#                 distmin=self.mesh_res_min,
-#                 distmax=self.mesh_res_max,
-#             )
-#             geom.set_background_mesh([field0], operator="Min")
-#             #return self.get_mesh()
-#             mesh = geom.generate_mesh(dim=2)
-#             pygmsh.write("test.msh")
-#         return Mesh("test.msh")
-#
-#     def get_mesh(self):
-#         mesh = self.geom.generate_mesh(dim=2)
-#         pygmsh.write("test.msh")
-#         return Mesh("test.msh")
-#
-
-
-
-# def msh(points, Lx, Ly, Lz, mesh_res_min, mesh_res_max=[]):
-#
-#     with pygmsh.geo.Geometry() as geom:
-#         rectangle = geom.add_rectangle(0.0, Lx, 0.0, Ly, 0, mesh_res_max)
-#
-#
-#         pts = [geom.add_point(p) for p in points]
-#         [geom.in_surface(p, rectangle) for p in pts]
-#
-#         field0 = geom.add_boundary_layer(
-#             nodes_list=pts,
-#             lcmin=mesh_res_min,
-#             lcmax=mesh_res_max,
-#             distmin=mesh_res_min,
-#             distmax=mesh_res_max,
-#         )
-#         geom.set_background_mesh([field0], operator="Min")
-#
-#         mesh = geom.generate_mesh(dim=2)
-#         pygmsh.write("test.msh")
-#         return Mesh("test.msh")
-#         print('writen')
-
-
-
-
-
-
-
-#
-# import pygmsh, copy, gmsh
-# class msh:
-#     def __init__(self, Lx, Ly, Lz, mesh_coarse = [], mesh_fine = []):
-#         if not mesh_coarse:
-#             self.mesh_coarse = Lx/10
-#         if not mesh_fine:
-#             self.mesh_fine = self.mesh_coarse/5
-#         self.Lx = Lx
-#         self.Ly = Ly
-#         self.Lz = Lz
-#         #
-#         #
-#
-#         #self.working = copy.deepcopy(self.base)
-#
-#     def remesh(self, pts):
-#         with pygmsh.geo.Geometry() as geom:
-#             geom = pygmsh.geo.Geometry()
-#
-#             rect = geom.add_rectangle(0.0, 1., 0.0, 1., 0)
-#             #msh_pts = [geom.add_point(p + [0], self.mesh_fine) for p in pts]
-#             #pt1 = geom.add_point([.2,.2,0],.1)
-#
-#             field1 = geom.add_boundary_layer(
-#                 nodes_list=[geom.add_point([.2,.2,0],.1)],
-#                 lcmin=0.01,
-#                 lcmax=0.1,
-#                 distmin=0.0,
-#                 distmax=0.2,
-#                 )
-#
-#
-#             geom.set_background_mesh([field1], operator='Min')
-#             #[geom.in_surface(msh_pt, rect) for msh_pt in msh_pts]
-#             #geom.set_recombined_surfaces([rect.surface])
-#             #geom.set_background_mesh([field0, field1], operator="Min")
-#
-#             #gmsh.option.setNumber("Mesh.CharacteristicLengthExtendFromBoundary", 0)
-#             #opt_mesh = pygmsh.optimize(mesh,method="")
-#             mesh = geom.generate_mesh(dim=2)
-#             mesh.write("test.vtk")
-#
-#             pygmsh.write("test.msh")
-#
-#         print('mesh written')
-
-    # def remesh(self, pts, mesh_res_fine):
-    #     self.working = copy.deepcopy(self.base)
-    #     p1 = self.working.add_point([.5, .5, 0.], mesh_res)
-    #     self.working.in_surface(p1, se)
