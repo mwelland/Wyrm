@@ -1,25 +1,3 @@
-"""This demo illustrates how to use of DOLFIN for solving the Cahn-Hilliard
-equation, which is a time-dependent nonlinear PDE """
-
-# Copyright (C) 2009 Garth N. Wells
-#
-# This file is part of DOLFIN.
-#
-# DOLFIN is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# DOLFIN is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
-#
-# You should have received a copy of the GNU Lesser General Public License
-# along with DOLFIN. If not, see <http://www.gnu.org/licenses/>.
-#
-# First added:  2009-06-20
-# Last changed: 2013-11-20
 
 # Begin demo
 
@@ -61,7 +39,7 @@ parameters["form_compiler"]["cpp_optimize"] = True
 parameters["form_compiler"]["representation"] = "quadrature"
 
 # Create mesh and define function spaces
-mesh = UnitSquareMesh(96, 96)
+mesh = SquareMesh(50, 50,1)
 V = FunctionSpace(mesh, "Lagrange", 1)
 ME = V*V
 x = SpatialCoordinate(mesh)
@@ -78,18 +56,44 @@ dc, dmu = split(du)
 c,  mu  = split(u)
 c0, mu0 = split(u0)
 
-# Create intial conditions and interpolate
-# u_init = InitialConditions()
-# u.interpolate(u_init)
-# u0.interpolate(u_init)
+#*************************************************************************************
+# Create INITIAL CONDITIONS and interpolate
+
 # u.sub(0).interpolate(sin(x[0])/2+.5)
 # u0.sub(0).interpolate(sin(x[0])/2+.5)
-u.sub(0).interpolate(-x[1]/2+.5)
-u0.sub(0).interpolate(-x[1]/2+.5)
+# u.sub(0).interpolate(-x[1]/2+.5)
+# u0.sub(0).interpolate(-x[1]/2+.5)
+# size_x = u.vector().size()
+# print('size = ', size_x)
+
+# print('arr =  ',arr)
+# print(type(arr))
+IC_arr = Function(V)
+print('size = ',IC_arr.vector().size())
+for i in range(IC_arr.vector().size()): 
+    IC_arr.vector()[i] = 0.0#0.63 + 0.02*(0.5 - random.random())
+
+#idx = int(IC_arr.vector().size()/2)
+#IC_arr.vector()[idx] = 0.6
+    
+#Random IC
+# u.sub(0).interpolate(x[1]-x[1]+0.5 + 0.02*( random.random()-0.5))
+# u0.sub(0).interpolate(x[1]-x[1]+0.5+ 0.02*( random.random()-0.5))
+#u.sub(0).interpolate(IC_arr)
+#u0.sub(0).interpolate(IC_arr)
+
+#Step function initial conditions
+# u.sub(0).interpolate(1/(1+2.71**(-2.0*50.0*(x[1]-0.1))))
+# u0.sub(0).interpolate(1/(1+2.71**(-2.0*50.0*(x[1]-0.1))))
+
+#modified step function IC
+u.sub(0).interpolate(1/(1+2.71**(-2.0*50.0*(x[1]-0.1)))*(x[1]**(0.1)))
+u0.sub(0).interpolate(1/(1+2.71**(-2.0*50.0*(x[1]-0.1)))*(x[1]**(0.1)))
+#*************************************************************************************
 
 #boundary conditions
-bc1 = DirichletBC(ME.sub(0),1.0,3) # 3 for y=0 plane
-bc2 = DirichletBC(ME.sub(0),0.0,4) # 4 for y=1 plane
+#bc1 = DirichletBC(ME.sub(0),0.0,3) # 3 for y=0 plane
+#bc2 = DirichletBC(ME.sub(0),0.0,4) # 4 for y=1 plane
 #bc3 = DirichletBC(ME.sub(0),1.0,1)
 # Compute the chemical potential df/dc
 c = variable(c)
@@ -99,9 +103,14 @@ dfdc = diff(f, c)
 
 # mu_(n+theta)
 mu_mid = (1.0-theta)*mu0 + theta*mu
+c_mid = (1.0-theta)*c0 + theta*c
 
+k = 1e-2
+D = 2.0
+D_c = D*(1/(1+2.71**(-2.0*3.0*(c-0.1))))**6
+#n = FacetNormal(V)
 # Weak statement of the equations
-L0 = c*q*dx - c0*q*dx + dt*dot(grad(mu_mid), grad(q))*dx
+L0 = c*q*dx - c0*q*dx + D_c*dt*dot(grad(mu_mid), grad(q))*dx - k*q*ds(4)
 L1 = mu*v*dx - dfdc*v*dx - lmbda*dot(grad(c), grad(v))*dx
 L = L0 + L1
 
@@ -111,18 +120,18 @@ L = L0 + L1
 # Create nonlinear problem and Newton solver
 # problem = CahnHilliardEquation(a, L)
 # solver = NewtonSolver()
-problem = NonlinearVariationalProblem(L,u,bcs=[bc1,bc2])
+problem = NonlinearVariationalProblem(L,u)#,bcs=[bc1])
 solver = NonlinearVariationalSolver(problem)
 solver.parameters["linear_solver"] = "lu"
 solver.parameters["convergence_criterion"] = "incremental"
 solver.parameters["relative_tolerance"] = 1e-6
 
 # Output file
-file = File("output.pvd", "compressed")
+file = File("output_stepic_Dc_d2_k1e-2.pvd", "compressed")
 
 # Step in time
 t = 0.0
-T = 50*dt
+T = 300*dt
 while (t < T):
     t += dt
     #u0.vector()[:] = u.vector()
