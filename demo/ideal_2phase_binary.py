@@ -2,8 +2,8 @@ from firedrake import *
 from tools import *
 import thermo_potentials as tp
 from math import log, ceil
-
 from firedrake.petsc import PETSc
+
 def print(*args, **kwargs):
     #Overloads print to be the petsc routine which relegates to the head mpi rank
     PETSc.Sys.Print(*args,flush=True)
@@ -15,13 +15,33 @@ interface_width = .1
 x_scale = 1
 c_scale = 1
 
-Lx = 10
+Lx = 4
 Ly = Lx/1
 Lz = Lx/1
 
-mesh_res = interface_width
 
-mesh = RectangleMesh(round(Lx/mesh_res), round(Ly/mesh_res), Lx/x_scale, Ly/x_scale)
+# Coarse mesh should have an 'appreciable' resolution. Fine mesh is scale of feature of interest
+mesh_res_coarse = Lx/4
+mesh_res_final = interface_width #target mesh resolution
+mg_levels = ceil( log(mesh_res_coarse/mesh_res_final,2) )
+print('Using {} levels of refinement'.format(mg_levels))
+
+mesh = BoxMesh(round(Lx/mesh_res_coarse), round(Ly/mesh_res_coarse), round(Lz/mesh_res_coarse), Lx/x_scale, Ly/x_scale, Lz/x_scale, reorder=True)
+
+hierarchy = MeshHierarchy(mesh, mg_levels)
+mesh = hierarchy[-1]
+# with File("mesh_mg.pvd") as of:
+#     of.write(hierarchy[0])
+outfile = File("mesh_mg.pvd")
+outfile.write(hierarchy[0])
+# outfile.write(*hierarchy)
+#mesh = hierarchy[2]
+#[outfile.write(mesh,time=i) for i,mesh in enumerate(hierarchy)]
+# for i in range(len(hierarchy)):
+#     print(i)
+#     outfile.write(*hierarchy,time=i)
+print('Mesh hierarchy assembled')
+
 # utility function to help with non-dimensionalization
 def gr(x):
     return grad(x)/x_scale
@@ -54,21 +74,20 @@ interface_energy = 5000
 ps = as_vector([p_phase, 1-p_phase])
 
 # Load potential
-
 pot = tp.load_potential('binary_2phase_elastic')
 
 response = pot.grad([c_scale*cmesh[0], c_scale*cmesh[1]]+[p_phase, 1-p_phase])   #Fixme - shouldn't be negative
 
 mu = as_vector(response[:n])
 P = as_vector(response[n:])
-#sigma = as_vector(response[2:8])
+print('Thermodynamic driver forces loaded')
 
 J =  -D*gr(mu)
 F_diffusion = inner(J, gr(test_c))*dx
 F_diffusion = 1/c_scale*F_diffusion
 
-F_phase = -M_phi*inner(P, derivative(ps, phase, test_phase))*dx
-F_phase += -M_phi*derivative(interface_energy*interface_area, phase, test_phase)*dx
+F_phase = -M_phi*inner(P, derivative(ps, phase, test_phase))*dx                         #bulk
+F_phase += -M_phi*derivative(interface_energy*interface_area, phase, test_phase)*dx     #interfacial
 
 F = F_diffusion + F_phase
 
@@ -76,7 +95,15 @@ params = {'snes_monitor': None,
           'snes_max_it': 10,
           'snes_atol':1e-6,
           'snes_rtol':1e-20,
-          'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
+          'snes_view': None,
+          'ksp_converged_reason': None,
+          #'snes_linesearch_type': 'bt',
+
+          #Direct
+          #'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
+
+          #Geometric multigrid
+          'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps',
           }
 
 # Since using a quadratic potential, we can just get initial values from expansion point
@@ -91,10 +118,10 @@ print(ci_b)
 # ci1 = as_vector([.8, .2])
 
 # ~~~ Initial conditions ~~~ #
-rc = 0*as_vector([1,1])
+rc = 0*as_vector([1,1,1])
 r = sqrt(inner(x-rc,x-rc))
 #p0 = (.5*(1.-tanh((x[0]-.5*Lx)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
-p0 = (.5*(1.-tanh((r-.5*Lx)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
+p0 = (.5*(1.-tanh((r-.2*10)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
 #pp0 = p0**3*(6*p0**2-15*p0+10)
 
 U.sub(1).interpolate(p0)
@@ -104,7 +131,7 @@ U.sub(0).interpolate(ic/c_scale)
 
 # Boundary conditions
 bcs = [
-    #DirichletBC(V.sub(1), Constant(0), 2),
+    DirichletBC(V.sub(1), Constant(0), 2),
     #DirichletBC(V.sub(0), ci1/c_scale, 2),
     #DirichletBC(V.sub(3),Constant([0,0,0]), boundaries),
     ]
@@ -129,7 +156,7 @@ eps_tol_t_target = eps_tol_t/2
 
 phase_old = Function(V_phase)
 
-while float(t) < t_end and iter_t<100:
+while float(t) < t_end and iter_t<10:
 
     iter_t +=1
     phase_old.assign(U.sub(1))
@@ -156,7 +183,7 @@ while float(t) < t_end and iter_t<100:
     # Time step was successful and has been accepted
     t.assign(float(t)+float(dt))
     stepper.accept_step()
-
+    stepper.solver.parameters.pop('snes_view',None) # Unset the snes_viewer so as not to repeat it.
     # Adapt the time step to some metric
     dphase = errornorm(phase,phase_old,'l10')
     print('max phase change', dphase)
