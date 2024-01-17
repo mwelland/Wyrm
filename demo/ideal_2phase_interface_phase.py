@@ -67,6 +67,7 @@ c = c_scale*cmesh
 
 # Phase field functions
 p_phase = phase**3*(6*phase**2-15*phase+10)
+
 g_phase = phase**2*(1-phase)**2
 interface_area = 3*( interface_width**2*inner(gr(phase),gr(phase)) + g_phase)
 ps = as_vector([p_phase, 1-p_phase, interface_area])
