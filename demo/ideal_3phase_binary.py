@@ -16,7 +16,7 @@ Lz = Lx/1
 
 # Coarse mesh should have an 'appreciable' resolution. Fine mesh is scale of feature of interest
 mesh_res_coarse = Lx/4
-mesh_res_final = 2*interface_width #target mesh resolution
+mesh_res_final = interface_width #target mesh resolution
 mg_levels = ceil( log(mesh_res_coarse/mesh_res_final,2) )
 print('Using {} levels of refinement'.format(mg_levels))
 
@@ -71,7 +71,7 @@ a = 50
 interface_energy = 5000*3*(interface_width**2*( pa*gr(pb) - pb*gr(pa) )**2 + pa**2*pb**2*(1+a*pc**2)
                     + interface_width**2*( pc*gr(pb) - pb*gr(pc) )**2 + pc**2*pb**2*(1+a*pa**2)
                     + interface_width**2*( pc*gr(pa) - pa*gr(pc) )**2 + pc**2*pa**2*(1+a*pb**2))
-interface_energy = inner(as_vector([5000,5000,5000]), as_vector(interface_area))
+#interface_energy = inner(as_vector([5000,5000,5000]), as_vector(interface_area))
 
 #Load potential
 pot = load_potential('binary_3phase_elastic')
