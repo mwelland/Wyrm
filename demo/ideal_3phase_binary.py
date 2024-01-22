@@ -2,11 +2,6 @@ from firedrake import *
 from tools import *
 from thermo_potentials import load_potential
 from math import log, ceil
-from firedrake.petsc import PETSc
-
-def print(*args, **kwargs):
-    #Overloads print to be the petsc routine which relegates to the head mpi rank
-    PETSc.Sys.Print(*args,flush=True)
 
 M_phi = 1e-3#1e-8
 D = 1e-3 #m^2/s = .1 cm^2/s
@@ -21,12 +16,14 @@ Lz = Lx/1
 
 # Coarse mesh should have an 'appreciable' resolution. Fine mesh is scale of feature of interest
 mesh_res_coarse = Lx/4
-mesh_res_final = interface_width #target mesh resolution
+mesh_res_final = 2*interface_width #target mesh resolution
 mg_levels = ceil( log(mesh_res_coarse/mesh_res_final,2) )
 print('Using {} levels of refinement'.format(mg_levels))
 
-#mesh = BoxMesh(round(Lx/mesh_res_coarse), round(Ly/mesh_res_coarse), round(Lz/mesh_res_coarse), Lx/x_scale, Ly/x_scale, Lz/x_scale, reorder=True)
-mesh = RectangleMesh(round(Lx/mesh_res_coarse), round(Ly/mesh_res_coarse), Lx/x_scale, Ly/x_scale)
+mesh = BoxMesh(round(Lx/mesh_res_coarse), round(Ly/mesh_res_coarse), round(Lz/mesh_res_coarse), Lx/x_scale, Ly/x_scale, Lz/x_scale, reorder=True)
+#mesh = BoxMesh(round(Lx/mesh_res_final), round(Ly/mesh_res_final), round(Lz/mesh_res_final), Lx/x_scale, Ly/x_scale, Lz/x_scale, reorder=True)
+
+#mesh = RectangleMesh(round(Lx/mesh_res_coarse), round(Ly/mesh_res_coarse), Lx/x_scale, Ly/x_scale)
 
 hierarchy = MeshHierarchy(mesh, mg_levels)
 mesh = hierarchy[-1]
@@ -63,10 +60,18 @@ ps = as_vector(p_phase)
 # Build multiphase energy -> to be moved to thermo potential.
 def multiphase(p, interface_width):
     def antisymmetric_gradient(pa, pb):
-        return 3*(interface_width**2*( pa*gr(pb)+pb*gr(pa) )**2 + pa**2*pb**2)
+        return 3*(interface_width**2*( pa*gr(pb) - pb*gr(pa) )**2 + pa**2*pb**2)
     return [antisymmetric_gradient(p[i], p[j]) for i in range(len(p)) for j in range(i)]
 interface_area =  multiphase(phi, interface_width)
-interface_energy = inner(as_vector([5000,5000,1000]), as_vector(interface_area))
+
+pa = phi[0]
+pb = phi[1]
+pc = phi[2]
+a = 50
+interface_energy = 5000*3*(interface_width**2*( pa*gr(pb) - pb*gr(pa) )**2 + pa**2*pb**2*(1+a*pc**2)
+                    + interface_width**2*( pc*gr(pb) - pb*gr(pc) )**2 + pc**2*pb**2*(1+a*pa**2)
+                    + interface_width**2*( pc*gr(pa) - pa*gr(pc) )**2 + pc**2*pa**2*(1+a*pb**2))
+interface_energy = inner(as_vector([5000,5000,5000]), as_vector(interface_area))
 
 #Load potential
 pot = load_potential('binary_3phase_elastic')
@@ -91,8 +96,8 @@ def create_bubble(centre, radius):
     centre = as_vector(centre)
     r = sqrt(inner(x-centre, x-centre))
     return .5*(1.-tanh((r-radius)/(2.*interface_width)))
-p0 = create_bubble( [.2*Lx, .2*Lx], .4*Lx)
-p1 = create_bubble( [.8*Lx, .8*Lx], .4*Lx)
+p0 = create_bubble( [.2*Lx, .2*Lx, .2*Lx], .4*Lx)
+p1 = create_bubble( [.8*Lx, .8*Lx, .8*Lx], .4*Lx)
 U.sub(1).interpolate(as_vector([p0,p1]))
 
 # Since using a quadratic potential, we can just get initial values from expansion point
@@ -105,7 +110,7 @@ U.sub(0).interpolate(dot(ps,ci)/c_scale)
 
 # Boundary conditions
 bcs = [
-    #DirichletBC(V.sub(1), Constant(0), 2),
+    DirichletBC(V.sub(1).sub(0), Constant(0), 2),
     #DirichletBC(V.sub(0), ci1/c_scale, 2),
     ]
 
@@ -119,64 +124,23 @@ params = {'snes_monitor': None,
           #'snes_linesearch_type': 'bt',
 
           #Direct
-          'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
+          #'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
 
           #Geometric multigrid
-          #'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps',
+          'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps',
+
           }
 
-# Set up time stepper
-dt = Constant(5.0e-2)
-t_end = 10000.0
-t = Constant(0.0)
+scheme = time_stepping_scheme(U, test_U, [F_diffusion, F_phase], [],
+    time_coefficients = as_vector([1,1,1,1]),
+    bcs = bcs,
+    params = params)
 
-tm = as_vector([1, 1, 1, 1])
-stepper = time_stepping_scheme(U, test_U, [F_diffusion, F_phase], [], tm, bcs=bcs, dt = dt, params=params)
+field_names = ['c', 'ps', 'P', 'mu']
+writer = writer([ 'cmesh', 'phase'], field_names, [eval(f) for f in field_names], mesh)
 
-field_names = ['c', 'ps', 'P', 'mu']#, 'ca', 'cb']
-writer = writer([ 'cmesh', 'phase'], field_names,[eval(f) for f in field_names],mesh)
-writer.write(U, 0.0)
-
-iter_t = 0
-eps_tol_t= 10
-eps_tol_t_target = eps_tol_t/2
-
-phase_old = Function(V_phase)
-
-while float(t) < t_end and iter_t<100:
-
-    iter_t +=1
-    phase_old.assign(U.sub(1))
-    print('')
-
-    print('{:n}: Time: {:6.4g}'.format(iter_t, float(t+dt)))
-    try:
-        so, eps_t, maxdt = stepper.step(dt)
-        # If time step successful
-        print('Succeeded. Estimated error: {:4.2g}, max change {:4.2g}'.format(eps_t, maxdt))
-    except KeyboardInterrupt:
-        print ('KeyboardInterrupt exception is caught')
-        break
-
-    except Exception as ex:
-        # Time stepper failed. Retry with smaller timestep
-        #raise
-        print('failed')
-        print(ex)
-        dt.assign(float(dt)*.5)
-        stepper.reset_step()
-        continue
-
-    # Time step was successful and has been accepted
-    t.assign(float(t)+float(dt))
-    stepper.accept_step()
-    stepper.solver.parameters.pop('snes_view',None) # Unset the snes_viewer so as not to repeat it.
-    # Adapt the time step to some metric
-    dphase = errornorm(phase,phase_old,'l10')
-    print('max phase change', dphase)
-    dphase_target = .1
-    #dt.assign(float(dt)*min( (eps_tol_t_target/(eps_t+1e-10)), 5))  # Change timestep to aim for tolerance
-    dt.assign(float(dt)*min( (dphase_target/(dphase)), 20))  # Change timestep to aim for tolerance
-
-    if iter_t %1 ==0:
-        writer.write(U, time=float(t))
+solve_time_series(scheme, writer,
+    t_range = [0, 5e-2, 1e4],
+    iter_t_max = 10,
+    eps_t_target = .1,
+    eps_s_target = .2)

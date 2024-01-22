@@ -1,4 +1,10 @@
 from firedrake import *
+from firedrake.petsc import PETSc
+
+
+def print(*args, **kwargs):
+    #Overloads print to be the petsc routine which relegates to the head mpi rank
+    PETSc.Sys.Print(*args,flush=True)
 
 class writer:
     def __init__(self, names, field_names, fields, mesh):
@@ -33,25 +39,12 @@ class writer:
         self.fcns = [i.interpolate() for i in self.interps]   # list of functions to hold interpolants.
         [f.rename(name, name) for f, name in zip(self.fcns, self.field_names)]
 
-        #f = Interpolator.interpolate().rename(field_name, field_name)
-
-
-        # self.file = XDMFFile(MPI.comm_world, 'solution.xdmf')
-        # self.file.parameters['flush_output']=True
-        # self.file.parameters['rewrite_function_mesh']=False
-        # self.file.parameters["functions_share_mesh"] = True
-
-    def write(self,U,time):
-        def get_functions(U,names): # Returns tuple of function with correct names
+    def write(self, U, time):
+        def get_functions(U, names): # Returns tuple of function with correct names
             sol = U.split()
             for i in range(len(sol)):
                sol[i].rename(names[i],names[i])
             return sol
-
-        #Find function space of field expression (dim?)
-        #Define function and interpolator
-        # Every timestep, updated functions via interpoaltor (stored for efficiency)
-        #print list of functions at each iteration.
 
         #print('Writing solution')
         flds = list(get_functions(U,self.names))
@@ -67,33 +60,89 @@ class writer:
         #[self.file.write(s,time=time) for s in get_functions(U,self.names)]
         #[self.file.write(getFcn(self.fields[i], self.field_names[i], self.mesh), time) for i in range(len(self.fields))]
 
-class time_stepper:
-    def __init__(self, time_stepping_scheme, t0 = 0, eps_tol_t = .1):
-        self.iteration_time = 0
-        self.t0 = t0
-        self.eps_tolerance_t= eps_tol_t
-        eps_tol_t_target = eps_tol_t/2
+def solve_time_series(scheme, writer,
+            t_range = [0, 5e-2, 1e4],
+            eps_t_target = .1,
+            eps_t_limit = None,
+            eps_s_target = 1000,
+            eps_s_limit = 1000,
+            exit_on_error = False,
+            iter_t_max = 1000,
+            max_dt_change = 2,
+            ):
+
+    t, dt, t_end = t_range
+    iter_t = 0
+
+    if not eps_t_limit:
+        eps_t_limit = 2*eps_t_target
+
+    if not eps_s_limit:
+        eps_s_limit = 2*eps_s_target
+
+    writer.write(scheme.U, 0.0)
+    while t<t_end and iter_t<iter_t_max:
+        iter_t +=1
+        proceed = False
+        print('\n{:n}: Solving for time: {:6.4g}'.format(iter_t, t+dt))
+        try:
+            so, eps_t, eps_s = scheme.step(dt)
+            print('Converged with dt: {:4.2g}. Estimated error: {:4.2g}, max change {:4.2g}'.format(dt, eps_t, eps_s))
+            proceed = True
+        except KeyboardInterrupt:
+            print ('KeyboardInterrupt exception is caught')
+            break
+        except Exception as ex:
+            print('Failed with dt: {:6.4g} \n'.format(dt), ex)
+            if exit_on_error:
+                raise
+
+        if iter_t == 1:
+            scheme.solver.parameters.pop('snes_view',None) # Unset the snes_viewer so as not to repeat it.
+
+        if proceed and eps_t>eps_t_limit:
+            print('Time error limit exceeded')
+            proceed = False
+
+        if proceed and eps_s>eps_s_limit:
+            print('Max solution change limit exceeded')
+            proceed = False
+
+        if proceed:
+                # Time step is successful and acceptable
+                t += dt
+                scheme.accept_step()
+                dt *= min(
+                    eps_t_target/(eps_t+1e-10),
+                    eps_s_target/(eps_s+1e-10),
+                    max_dt_change)
+        else:
+            dt *=.5
+            scheme.reset_step()
+
+        # Adapt the time step to some metric
+        #dphase = errornorm(phase,phase_old,'l10')
+        #print('max phase change', dphase)
+        #dphase_target = .1
+
+        #dt.assign(float(dt)*min( (dphase_target/(dphase)), 20))  # Change timestep to aim for tolerance
 
 
 
-
-
+        if iter_t %1 ==0:
+            writer.write(scheme.U, time=float(t))
 
 class time_stepping_scheme:
     # Defines an object to contain the time stepping
-    def __init__(self, U, test_U, F_td, F_qs, tm, bcs=[], dt = 1., nullspace=None, bounds = None, params=[]):
+    def __init__(self, U, test_U, F_td, F_qs, time_coefficients, bcs=[], dt = 1, nullspace=None, bounds = None, params=[]):
 
         V = U.function_space()
-
         self.U = U
         self.U_old = U.copy(deepcopy=True)
-
         self.dUdt = Function(V)
         self.dUdt_old = Function(V)
-
         self.dU = TrialFunction(V)
 
-        self.iter = 0
         self.bounds = bounds
         self.dt = Constant(dt)
 
@@ -101,61 +150,31 @@ class time_stepping_scheme:
         self.problem_steady_state = NonlinearVariationalProblem(F_steady_state, U, bcs=bcs)
         self.solver_steady_state = NonlinearVariationalSolver(self.problem_steady_state, solver_parameters=params, nullspace=nullspace)
 
-        F = inner(elem_mult(tm,(self.U-self.U_old))/self.dt, test_U)*dx + F_steady_state
-        #F = inner(elem_mult(tm,(self.U-self.U_old))/self.dt, as_vector([test_U[5], test_U[6], test_U[2],0,0,0,0,0,0]))*dx - sum(F_td)+sum(F_qs)   #Useful for testing Diffusion
-        #F = inner(elem_mult(tm,(self.U-self.U_old)), test_U)*dx - self.dt*sum(F_td)+sum(F_qs)
-        self.problem = NonlinearVariationalProblem(F, U, bcs=bcs)
+        F_time_dependant = inner(elem_mult(time_coefficients,(self.U-self.U_old))/self.dt, test_U)*dx + F_steady_state
+        self.problem = NonlinearVariationalProblem(F_time_dependant, U, bcs=bcs)
         self.solver = NonlinearVariationalSolver(self.problem, solver_parameters=params, nullspace=nullspace)
 
     def step(self, dt):
         self.dt.assign(dt)
         #self.t.assign(self.t + dt)
-
-        self.iter += 1
         so = self.solver.solve(bounds = self.bounds)
-
-        self.dUdt.assign(self.U)
-        self.dUdt-=self.U_old
-        self.dUdt/=self.dt(0)
-
-        #** Not sure why needed? should be self.dUdt.assign((self.U-self.U_old)/self.dt(0))    #Calculate new dUdt
-        #self.dUdt.assign((self.U-self.U_old)/self.dt(0))    #Calculate new dUdt
-        #print(errornorm(self.dUdt, self.dUdt_old)/self.dt(0)/2*self.dt(0)**2)
-        eps_t = errornorm(self.dUdt, self.dUdt_old)/2*self.dt(0) #/dt*dt^2  #Estimate current rate of change of solution
-        #eps_t = norm((self.dUdt-self.dUdt_old)/self.dt(0), norm_type='l2')/2*self.dt(0)**2    #Estimate current rate of change of solution
-
-        #eps_t = (self.dUdt.vector()-self.dUdt_old.vector()).max()/self.dt(0)/2*self.dt(0)**2
-        #print('max change',self.dUdt.vector().max()*self.dt(0))
-        return [so, eps_t, self.dUdt.vector().max()]
+        self.dUdt.assign((self.U-self.U_old))    #Is this slow compared to itnerpolate or vector manipulation?
+        self.dUdt /= dt
+        eps_t = errornorm(self.dUdt, self.dUdt_old)/2*dt #/dt*dt^2  #Estimate current rate of change of solution
+        #eps_s_max = errornorm(self.U, self.U_old,'l100')   #l100 argument doesn't work. no linf option
+        eps_s = self.dUdt.vector().max()*dt
+        return [so, eps_t, eps_s]
 
     def accept_step(self):
-        # If step was acceptable, prepare for next step
-        self.dUdt_old.assign(self.dUdt)    # update old dUdt
+        self.dUdt_old.assign(self.dUdt)
         self.U_old.assign(self.U)
 
-    def reset_step(self):   # If the solver dies part way through U will have been changed. Need to reset before next round.
+    def reset_step(self):
         self.U.assign(self.U_old)
         self.dUdt.assign(self.dUdt_old)    # update old dUdt
 
-    def estimate_error_dt2(self):
-        return errornorm(self.dUdt, self.dUdt_old)/2*self.dt(0)
-
-    def estimate_error_max_change(self):
-        return self.dUdt.vector().max()
-
-    def plotJac(self):
-        petsc_mat = assemble(self.problem.J).M.handle    # Not sure if needed or already assembled?
-
-        import scipy.sparse as sp
-        import matplotlib.pyplot as plt
-        indptr, indices, data = petsc_mat.getValuesCSR()
-        scipy_mat = sp.csr_matrix((data, indices, indptr), shape=petsc_mat.getSize())
-        plt.spy(scipy_mat)
-        plt.savefig('Jacobian.png')
-        #plt.show()
-
-    def steady_state(self):
-        so = self.solver_ss.solve() #If this errors out, nothing else will execute
+    def jump_to_steady_state(self):
+        so = self.solver_steady_state.solve() #If this errors out, nothing else will execute
         print("Solved!")
         # Only reach this point if solve was successful
         self.dUdt.assign(self.U)
@@ -166,4 +185,14 @@ class time_stepping_scheme:
         eps_t = norm((self.dUdt-self.dUdt_old)/self.dt(0), norm_type='l2')/2*self.dt(0)**2
         return [so, eps_t, self.deltaU.vector().max()]
 
-    #def take_step(self):
+    def plotJac(self):
+        print('Warning - not tested')
+        petsc_mat = assemble(self.problem.J).M.handle    # Not sure if needed or already assembled?
+
+        import scipy.sparse as sp
+        import matplotlib.pyplot as plt
+        indptr, indices, data = petsc_mat.getValuesCSR()
+        scipy_mat = sp.csr_matrix((data, indices, indptr), shape=petsc_mat.getSize())
+        plt.spy(scipy_mat)
+        plt.savefig('Jacobian.png')
+        #plt.show()
