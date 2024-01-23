@@ -1,6 +1,6 @@
 from firedrake import *
 from tools import *
-from thermo_potentials import load_potential
+import thermo_potentials as tp
 from math import log, ceil
 from firedrake.petsc import PETSc
 
@@ -74,7 +74,7 @@ interface_energy = 5000
 ps = as_vector([p_phase, 1-p_phase])
 
 # Load potential
-pot = load_potential('binary_2phase_elastic')
+pot = tp.load_potential('binary_2phase_elastic')
 
 response = pot.grad([c_scale*cmesh[0], c_scale*cmesh[1]]+[p_phase, 1-p_phase])   #Fixme - shouldn't be negative
 
@@ -118,16 +118,16 @@ print(ci_b)
 # ci1 = as_vector([.8, .2])
 
 # ~~~ Initial conditions ~~~ #
-#rc = 0*as_vector([1,1,1])
-#r = sqrt(inner(x-rc,x-rc))
+rc = 0*as_vector([1,1,1])
+r = sqrt(inner(x-rc,x-rc))
 #p0 = (.5*(1.-tanh((x[0]-.5*Lx)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
-#p0 = (.5*(1.-tanh((r-.2*10)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
+p0 = (.5*(1.-tanh((r-.2*10)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
 #pp0 = p0**3*(6*p0**2-15*p0+10)
 
-#U.sub(1).interpolate(p0)
+U.sub(1).interpolate(p0)
 
-ic = 1/(1+2.71**(-2.0*50.0*(x[2]-0.1)))*(x[2]**(0.1))
-U.sub(1).interpolate(ic/c_scale)
+ic = p0*(1+0*1e-3)*ci_a+(1-p0)*ci_b
+U.sub(0).interpolate(ic/c_scale)
 
 # Boundary conditions
 bcs = [
@@ -156,7 +156,7 @@ eps_tol_t_target = eps_tol_t/2
 
 phase_old = Function(V_phase)
 
-while float(t) < t_end and iter_t<100:
+while float(t) < t_end and iter_t<10:
 
     iter_t +=1
     phase_old.assign(U.sub(1))

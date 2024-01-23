@@ -15,7 +15,7 @@ interface_width = .1
 x_scale = 1
 c_scale = 1
 
-Lx = 4
+Lx = 3
 Ly = Lx/1
 Lz = Lx/1
 
@@ -67,27 +67,24 @@ c = c_scale*cmesh
 
 # Phase field functions
 p_phase = phase**3*(6*phase**2-15*phase+10)
+
 g_phase = phase**2*(1-phase)**2
 interface_area = 3*( interface_width**2*inner(gr(phase),gr(phase)) + g_phase)
-interface_energy = 5000
-
-ps = as_vector([p_phase, 1-p_phase])
+ps = as_vector([p_phase, 1-p_phase, interface_area])
 
 # Load potential
-pot = load_potential('binary_2phase_elastic')
-
-response = pot.grad([c_scale*cmesh[0], c_scale*cmesh[1]]+[p_phase, 1-p_phase])   #Fixme - shouldn't be negative
-
+pot = load_potential('binary_interface_phase')
+response = pot.grad([c[0], c[1]]+[ps[0], ps[1], ps[2]])   #Fixme - shouldn't be negative
 mu = as_vector(response[:n])
 P = as_vector(response[n:])
 print('Thermodynamic driver forces loaded')
 
+# Governing equations
 J =  -D*gr(mu)
 F_diffusion = inner(J, gr(test_c))*dx
 F_diffusion = 1/c_scale*F_diffusion
 
-F_phase = -M_phi*inner(P, derivative(ps, phase, test_phase))*dx                         #bulk
-F_phase += -M_phi*derivative(interface_energy*interface_area, phase, test_phase)*dx     #interfacial
+F_phase = -M_phi*inner(P, derivative(ps, phase, test_phase))*dx
 
 F = F_diffusion + F_phase
 
@@ -108,26 +105,25 @@ params = {'snes_monitor': None,
 
 # Since using a quadratic potential, we can just get initial values from expansion point
 pt = pot.additional_fields['expansion_point']
-print(pt)
 
 ci_a = as_vector([pt['c0_a'], pt['c1_a']])/pt['V_a']
 ci_b = as_vector([pt['c0_b'], pt['c1_b']])/pt['V_b']
-print(ci_a)
-print(ci_b)
+# print(ci_a)
+# print(ci_b)
 # ci0 = as_vector([.2, .8])
 # ci1 = as_vector([.8, .2])
 
 # ~~~ Initial conditions ~~~ #
-#rc = 0*as_vector([1,1,1])
-#r = sqrt(inner(x-rc,x-rc))
+rc = 0*as_vector([1,1,1])
+r = sqrt(inner(x-rc,x-rc))
 #p0 = (.5*(1.-tanh((x[0]-.5*Lx)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
-#p0 = (.5*(1.-tanh((r-.2*10)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
+p0 = (.5*(1.-tanh((r-.2*10)/(2.*interface_width))))# * (.5*(1.-tanh((3-x[0])/(2.*interface_width))))
 #pp0 = p0**3*(6*p0**2-15*p0+10)
 
-#U.sub(1).interpolate(p0)
+U.sub(1).interpolate(p0)
 
-ic = 1/(1+2.71**(-2.0*50.0*(x[2]-0.1)))*(x[2]**(0.1))
-U.sub(1).interpolate(ic/c_scale)
+ic = p0*(1+0*1e-3)*ci_a+(1-p0)*ci_b
+U.sub(0).interpolate(ic/c_scale)
 
 # Boundary conditions
 bcs = [
@@ -144,19 +140,21 @@ t_end = 10000.0
 t = Constant(0.0)
 
 tm = as_vector([1, 1, 1])
-stepper = timestepper(U, test_U, [F_diffusion, F_phase], [], tm, bcs=bcs, dt = dt, params=params)
+scheme = time_stepping_scheme(U, test_U, [F_diffusion, F_phase], [], tm, bcs=bcs, dt = dt, params=params)
+
 
 field_names = ['c', 'ps', 'P', 'mu']#, 'ca', 'cb']
-writer = writer([ 'cmesh', 'phase'], field_names,[eval(f) for f in field_names],mesh)
+writer = writer([ 'cmesh', 'phase'], field_names, [eval(f) for f in field_names],mesh)
 writer.write(U, 0.0)
 
 iter_t = 0
 eps_tol_t= 10
 eps_tol_t_target = eps_tol_t/2
 
+
 phase_old = Function(V_phase)
 
-while float(t) < t_end and iter_t<100:
+while float(t) < t_end and iter_t<1000:
 
     iter_t +=1
     phase_old.assign(U.sub(1))
@@ -164,9 +162,10 @@ while float(t) < t_end and iter_t<100:
 
     print('{:n}: Time: {:6.4g}'.format(iter_t, float(t+dt)))
     try:
-        so, eps_t, maxdt = stepper.step(dt)
+        so, eps_t, maxdt = scheme.step(dt)
+
         # If time step successful
-        print('Succeeded. Estimated error: {:4.2g}, max change {:4.2g}'.format(eps_t, maxdt))
+        print('Succeeded. Estimated error: {:4.2g}, max change {:4.2g}'.format(scheme.estimate_error_dt2(), scheme.estimate_error_max_change()))
     except KeyboardInterrupt:
         print ('KeyboardInterrupt exception is caught')
         break
@@ -177,13 +176,13 @@ while float(t) < t_end and iter_t<100:
         print('failed')
         print(ex)
         dt.assign(float(dt)*.5)
-        stepper.reset_step()
+        scheme.reset_step()
         continue
 
     # Time step was successful and has been accepted
     t.assign(float(t)+float(dt))
-    stepper.accept_step()
-    stepper.solver.parameters.pop('snes_view',None) # Unset the snes_viewer so as not to repeat it.
+    scheme.accept_step()
+    scheme.solver.parameters.pop('snes_view',None) # Unset the snes_viewer so as not to repeat it.
     # Adapt the time step to some metric
     dphase = errornorm(phase,phase_old,'l10')
     print('max phase change', dphase)
