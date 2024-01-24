@@ -64,18 +64,19 @@ def multiphase(p, interface_width):
     return [antisymmetric_gradient(p[i], p[j]) for i in range(len(p)) for j in range(i)]
 interface_area =  multiphase(phi, interface_width)
 
-pa = phi[0]
-pb = phi[1]
-pc = phi[2]
-a = 50
-interface_energy = 5000*3*(interface_width**2*( pa*gr(pb) - pb*gr(pa) )**2 + pa**2*pb**2*(1+a*pc**2)
-                    + interface_width**2*( pc*gr(pb) - pb*gr(pc) )**2 + pc**2*pb**2*(1+a*pa**2)
-                    + interface_width**2*( pc*gr(pa) - pa*gr(pc) )**2 + pc**2*pa**2*(1+a*pb**2))
-#interface_energy = inner(as_vector([5000,5000,5000]), as_vector(interface_area))
+# pa = phi[0]
+# pb = phi[1]
+# pc = phi[2]
+# a = 50
+# interface_energy = 5000*3*(interface_width**2*( pa*gr(pb) - pb*gr(pa) )**2 + pa**2*pb**2*(1+a*pc**2)
+#                     + interface_width**2*( pc*gr(pb) - pb*gr(pc) )**2 + pc**2*pb**2*(1+a*pa**2)
+#                     + interface_width**2*( pc*gr(pa) - pa*gr(pc) )**2 + pc**2*pa**2*(1+a*pb**2))
+
+interface_energy = inner(as_vector([5000]*m), as_vector(interface_area))
 
 #Load potential
 pot = load_potential('binary_3phase_elastic')
-response = pot.grad([ci for ci in c]+p_phase)   #Fixme - shouldn't be negative
+response = pot.grad([ci for ci in c]+p_phase)
 mu = as_vector(response[:n])
 P = as_vector(response[n:])
 print('Thermodynamic driver forces loaded')
