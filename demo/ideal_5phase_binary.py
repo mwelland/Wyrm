@@ -2,7 +2,7 @@ from firedrake import *
 from tools import *
 #from ufl_tools import max_value
 from thermo_potentials import load_potential
-from math import log, ceil
+from math import log, ceil, comb
 
 M_phi = 1e-3#1e-8
 D = 1e-3 #m^2/s = .1 cm^2/s
@@ -35,7 +35,7 @@ def gr(x):
 
 #n - number of species, m = number of phases
 n = 2
-m = 3
+m = 5
 
 xmesh = SpatialCoordinate(mesh)
 x = xmesh*x_scale
@@ -73,10 +73,11 @@ interface_area =  multiphase(phi, interface_width)
 #                     + interface_width**2*( pc*gr(pb) - pb*gr(pc) )**2 + pc**2*pb**2*(1+a*pa**2)
 #                     + interface_width**2*( pc*gr(pa) - pa*gr(pc) )**2 + pc**2*pa**2*(1+a*pb**2))
 
-interface_energy = inner(as_vector([5000]*m), as_vector(interface_area))
+interface_energy = inner(as_vector([5000]*comb(m,2)), as_vector(interface_area))
 
 #Load potential
-pot = load_potential('binary_3phase_elastic')
+pot = load_potential('binary_5phase_elastic')
+print('hi', pot.vars)
 response = pot.grad([ci for ci in c]+p_phase)
 mu = as_vector(response[:n])
 P = as_vector(response[n:])
@@ -101,14 +102,16 @@ def create_bubble(centre, radius):
 p0 = create_bubble( [.2*Lx, .2*Lx, .2*Lx], .4*Lx)
 p1 = create_bubble( [.8*Lx, .8*Lx, .8*Lx], .4*Lx)
 
-U.sub(1).interpolate(as_vector([p0,p1]))
+U.sub(1).interpolate(as_vector([p0,p1,0,0]))
 
 # Since using a quadratic potential, we can just get initial values from expansion point
 pt = pot.additional_fields['expansion_point']
 ci = as_matrix([
     [pt['c0_a']/pt['V_a'], pt['c1_a']/pt['V_a']],
     [pt['c0_b']/pt['V_b'], pt['c1_b']/pt['V_b']],
-    [pt['c0_c']/pt['V_c'], pt['c1_c']/pt['V_c']]])
+    [pt['c0_c']/pt['V_c'], pt['c1_c']/pt['V_c']],
+    [pt['c0_d']/pt['V_d'], pt['c1_d']/pt['V_d']],
+    [pt['c0_e']/pt['V_e'], pt['c1_e']/pt['V_e']]])
 U.sub(0).interpolate(dot(ps,ci)/c_scale)
 
 # Boundary conditions
@@ -135,7 +138,7 @@ params = {'snes_monitor': None,
           }
 
 scheme = time_stepping_scheme(U, test_U, [F_diffusion, F_phase], [],
-    time_coefficients = as_vector([1,1,1,1]),
+    time_coefficients = as_vector([1,1,1,1,1,1]),
     bcs = bcs,
     params = params)
 

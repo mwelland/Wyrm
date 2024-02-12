@@ -9,7 +9,7 @@ def print(*args, **kwargs):
 class writer:
     def __init__(self, names, field_names, fields, mesh):
         #Names of native fields and user-defined must be treated differently.
-        self.names = names  #Names of natrive fields
+        self.names = names  #Names of calculated fields
         self.field_names = field_names  #Names of user-defined fields
         self.fields = fields    #User-defined fields
         self.mesh = mesh
@@ -47,7 +47,7 @@ class writer:
             return sol
 
         #print('Writing solution')
-        flds = list(get_functions(U,self.names))
+        flds = list(get_functions(U, self.names))
 
         [i.interpolate(output=f) for i,f in zip(self.interps, self.fcns)]  #updates all output functions
 
@@ -59,6 +59,8 @@ class writer:
         self.file.write(*flds, time=time)
         #[self.file.write(s,time=time) for s in get_functions(U,self.names)]
         #[self.file.write(getFcn(self.fields[i], self.field_names[i], self.mesh), time) for i in range(len(self.fields))]
+
+
 
 def solve_time_series(scheme, writer,
             t_range = [0, 5e-2, 1e4],
