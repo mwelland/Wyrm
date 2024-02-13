@@ -3,7 +3,7 @@ from tools import *
 from thermo_potentials import load_potential
 from math import log, ceil
 from firedrake.petsc import PETSc
-
+print("HELLOOO")
 def print(*args, **kwargs):
     #Overloads print to be the petsc routine which relegates to the head mpi rank
     PETSc.Sys.Print(*args,flush=True)
@@ -74,7 +74,9 @@ interface_energy = 5000
 ps = as_vector([p_phase, 1-p_phase])
 
 # Load potential
-pot = load_potential('binary_2phase_elastic')
+#pot = load_potential('binary_2phase_elastic')
+pot = load_potential('SiC_thermo_potentials')
+
 
 response = pot.grad([c_scale*cmesh[0], c_scale*cmesh[1]]+[p_phase, 1-p_phase])   #Fixme - shouldn't be negative
 
