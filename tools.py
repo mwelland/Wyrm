@@ -1,53 +1,10 @@
 from firedrake import *
+from firedrake.petsc import PETSc
 
 
-import time
-class timer():
-    def __init__(self):
-        self.t = time.perf_counter()
-
-    def ping(self, str=None):
-        t = time.perf_counter()
-        if str:
-            print(str, t-self.t)
-        else:
-            print('Time:', t-self.t)
-        self.t = t
-
-def voigt(u):
-    return as_vector([u[i,i] for i in range(3)]
-                     + [2*u[1,2]]
-                     + [2*u[0,2]]
-                     + [2*u[0,1]])
-
-def unvoigt(u):
-    return as_matrix([[u[0],.5*u[5],.5*u[4]], [.5*u[5], u[1], .5*u[3]],[.5*u[4], .5*u[3], u[2]]])
-
-def epsd2epsd5(eps):
-    return
-
-def flc1hs(x,x0,w=[]):
-    if not w:
-        w = x0
-    xp = (x-x0)/w
-    smooth = xp**3*(6*xp**2-15*xp+10)
-    return conditional(lt(xp,0), 0, conditional(gt(xp,1),1, smooth) )
-
-def rigid_body_np(V_disp):
-    x= SpatialCoordinate(V_disp.mesh())
-    ns_full = [
-        Constant((1, 0, 0)),
-        Constant((0, 1, 0)),
-        Constant((0, 0, 1)),
-        as_vector([-x[1], x[0],     0]),
-        as_vector([-x[2],    0,  x[0]]),
-        as_vector([    0, -x[2], x[1]]),
-        ]
-    nsb_full = [interpolate(n, V_disp) for n in ns_full]
-    ns_disp = VectorSpaceBasis(nsb_full)
-    ns_disp.orthonormalize()
-    return ns_disp
-
+def print(*args, **kwargs):
+    #Overloads print to be the petsc routine which relegates to the head mpi rank
+    PETSc.Sys.Print(*args,flush=True)
 
 class writer:
     def __init__(self, names, field_names, fields, mesh):
@@ -82,25 +39,12 @@ class writer:
         self.fcns = [i.interpolate() for i in self.interps]   # list of functions to hold interpolants.
         [f.rename(name, name) for f, name in zip(self.fcns, self.field_names)]
 
-        #f = Interpolator.interpolate().rename(field_name, field_name)
-
-
-        # self.file = XDMFFile(MPI.comm_world, 'solution.xdmf')
-        # self.file.parameters['flush_output']=True
-        # self.file.parameters['rewrite_function_mesh']=False
-        # self.file.parameters["functions_share_mesh"] = True
-
-    def write(self,U,time):
-        def get_functions(U,names): # Returns tuple of function with correct names
+    def write(self, U, time):
+        def get_functions(U, names): # Returns tuple of function with correct names
             sol = U.split()
             for i in range(len(sol)):
                sol[i].rename(names[i],names[i])
             return sol
-
-        #Find function space of field expression (dim?)
-        #Define function and interpolator
-        # Every timestep, updated functions via interpoaltor (stored for efficiency)
-        #print list of functions at each iteration.
 
         #print('Writing solution')
         flds = list(get_functions(U,self.names))
@@ -116,75 +60,121 @@ class writer:
         #[self.file.write(s,time=time) for s in get_functions(U,self.names)]
         #[self.file.write(getFcn(self.fields[i], self.field_names[i], self.mesh), time) for i in range(len(self.fields))]
 
-class timestepper:
-    def __init__(self, U, test_U, F_td, F_qs, tm, bcs=[], dt = 1., nullspace=None, bounds = None, params=[]):
+def solve_time_series(scheme, writer,
+            t_range = [0, 5e-2, 1e4],
+            eps_t_target = .1,
+            eps_t_limit = None,
+            eps_s_target = 1000,
+            eps_s_limit = 1000,
+            exit_on_error = False,
+            iter_t_max = 1000,
+            max_dt_change = 2,
+            ):
+
+    t, dt, t_end = t_range
+    iter_t = 0
+
+    if not eps_t_limit:
+        eps_t_limit = 2*eps_t_target
+
+    if not eps_s_limit:
+        eps_s_limit = 2*eps_s_target
+
+    writer.write(scheme.U, 0.0)
+    while t<t_end and iter_t<iter_t_max:
+        iter_t +=1
+        proceed = False
+        print('\n{:n}: Solving for time: {:6.4g}'.format(iter_t, t+dt))
+        try:
+            so, eps_t, eps_s = scheme.step(dt)
+            print('Converged with dt: {:4.2g}. Estimated error: {:4.2g}, max change {:4.2g}'.format(dt, eps_t, eps_s))
+            proceed = True
+        except KeyboardInterrupt:
+            print ('KeyboardInterrupt exception is caught')
+            break
+        except Exception as ex:
+            print('Failed with dt: {:6.4g} \n'.format(dt), ex)
+            if exit_on_error:
+                raise
+
+        if iter_t == 1:
+            scheme.solver.parameters.pop('snes_view',None) # Unset the snes_viewer so as not to repeat it.
+
+        if proceed and eps_t>eps_t_limit:
+            print('Time error limit exceeded')
+            proceed = False
+
+        if proceed and eps_s>eps_s_limit:
+            print('Max solution change limit exceeded')
+            proceed = False
+
+        if proceed:
+                # Time step is successful and acceptable
+                t += dt
+                scheme.accept_step()
+                dt *= min(
+                    eps_t_target/(eps_t+1e-10),
+                    eps_s_target/(eps_s+1e-10),
+                    max_dt_change)
+        else:
+            dt *=.5
+            scheme.reset_step()
+
+        # Adapt the time step to some metric
+        #dphase = errornorm(phase,phase_old,'l10')
+        #print('max phase change', dphase)
+        #dphase_target = .1
+
+        #dt.assign(float(dt)*min( (dphase_target/(dphase)), 20))  # Change timestep to aim for tolerance
+
+
+
+        if iter_t %1 ==0:
+            writer.write(scheme.U, time=float(t))
+
+class time_stepping_scheme:
+    # Defines an object to contain the time stepping
+    def __init__(self, U, test_U, F_td, F_qs, time_coefficients, bcs=[], dt = 1, nullspace=None, bounds = None, params=[]):
+
+        V = U.function_space()
         self.U = U
         self.U_old = U.copy(deepcopy=True)
-        V = U.function_space()
         self.dUdt = Function(V)
         self.dUdt_old = Function(V)
         self.dU = TrialFunction(V)
-        self.iter = 0
+
         self.bounds = bounds
         self.dt = Constant(dt)
 
-        F_ss = -sum(F_td)+sum(F_qs)
-        self.problem_ss = NonlinearVariationalProblem(F_ss, U, bcs=bcs)
-        self.solver_ss = NonlinearVariationalSolver(self.problem_ss, solver_parameters=params, nullspace=nullspace)
+        F_steady_state = -sum(F_td)+sum(F_qs)
+        self.problem_steady_state = NonlinearVariationalProblem(F_steady_state, U, bcs=bcs)
+        self.solver_steady_state = NonlinearVariationalSolver(self.problem_steady_state, solver_parameters=params, nullspace=nullspace)
 
-        F = inner(elem_mult(tm,(self.U-self.U_old))/self.dt, test_U)*dx +F_ss
-
-        #F = inner(elem_mult(tm,(self.U-self.U_old))/self.dt, as_vector([test_U[5], test_U[6], test_U[2],0,0,0,0,0,0]))*dx - sum(F_td)+sum(F_qs)   #Useful for testing Diffusion
-
-
-        #F = inner(elem_mult(tm,(self.U-self.U_old)), test_U)*dx - self.dt*sum(F_td)+sum(F_qs)
-        self.problem = NonlinearVariationalProblem(F, U, bcs=bcs)
+        F_time_dependant = inner(elem_mult(time_coefficients,(self.U-self.U_old))/self.dt, test_U)*dx + F_steady_state
+        self.problem = NonlinearVariationalProblem(F_time_dependant, U, bcs=bcs)
         self.solver = NonlinearVariationalSolver(self.problem, solver_parameters=params, nullspace=nullspace)
 
     def step(self, dt):
         self.dt.assign(dt)
-        self.iter += 1
-        so = self.solver.solve(bounds = self.bounds) #If this errors out, nothing else will execute
-        # Only reach this point if solve was successful
-        self.dUdt.assign(self.U)
-        self.dUdt-=self.U_old
-        self.dUdt/=self.dt(0)
-
-        #** Not sure why needed? should be self.dUdt.assign((self.U-self.U_old)/self.dt(0))    #Calculate new dUdt
-        #self.dUdt.assign((self.U-self.U_old)/self.dt(0))    #Calculate new dUdt
-        #print('tick')
-        #print(errornorm(self.dUdt, self.dUdt_old)/self.dt(0)/2*self.dt(0)**2)
-        eps_t = errornorm(self.dUdt, self.dUdt_old)/2*self.dt(0) #/dt*dt^2  #Estimate current rate of change of solution
-        #print('prick')
-        #eps_t = norm((self.dUdt-self.dUdt_old)/self.dt(0), norm_type='l2')/2*self.dt(0)**2    #Estimate current rate of change of solution
-        #print('tock', eps_t)
-
-
-        #eps_t = (self.dUdt.vector()-self.dUdt_old.vector()).max()/self.dt(0)/2*self.dt(0)**2
-        #print('max change',self.dUdt.vector().max()*self.dt(0))
-        return [so, eps_t, self.dUdt.vector().max()]
+        #self.t.assign(self.t + dt)
+        so = self.solver.solve(bounds = self.bounds)
+        self.dUdt.assign((self.U-self.U_old))    #Is this slow compared to itnerpolate or vector manipulation?
+        self.dUdt /= dt
+        eps_t = errornorm(self.dUdt, self.dUdt_old)/2*dt #/dt*dt^2  #Estimate current rate of change of solution
+        #eps_s_max = errornorm(self.U, self.U_old,'l100')   #l100 argument doesn't work. no linf option
+        eps_s = self.dUdt.vector().max()*dt
+        return [so, eps_t, eps_s]
 
     def accept_step(self):
-        # If step was acceptable, prepare for next step
-        self.dUdt_old.assign(self.dUdt)    # update old dUdt
+        self.dUdt_old.assign(self.dUdt)
         self.U_old.assign(self.U)
 
-    def reset_step(self):   # If the solver dies part way through U will have been changed. Need to reset before next round.
+    def reset_step(self):
         self.U.assign(self.U_old)
+        self.dUdt.assign(self.dUdt_old)    # update old dUdt
 
-    def plotJac(self):
-        petsc_mat = assemble(self.problem.J).M.handle    # Not sure if needed or already assembled?
-
-        import scipy.sparse as sp
-        import matplotlib.pyplot as plt
-        indptr, indices, data = petsc_mat.getValuesCSR()
-        scipy_mat = sp.csr_matrix((data, indices, indptr), shape=petsc_mat.getSize())
-        plt.spy(scipy_mat)
-        plt.savefig('Jacobian.png')
-        #plt.show()
-
-    def steady_state(self):
-        so = self.solver_ss.solve() #If this errors out, nothing else will execute
+    def jump_to_steady_state(self):
+        so = self.solver_steady_state.solve() #If this errors out, nothing else will execute
         print("Solved!")
         # Only reach this point if solve was successful
         self.dUdt.assign(self.U)
@@ -195,155 +185,14 @@ class timestepper:
         eps_t = norm((self.dUdt-self.dUdt_old)/self.dt(0), norm_type='l2')/2*self.dt(0)**2
         return [so, eps_t, self.deltaU.vector().max()]
 
-    #def take_step(self):
+    def plotJac(self):
+        print('Warning - not tested')
+        petsc_mat = assemble(self.problem.J).M.handle    # Not sure if needed or already assembled?
 
-
-
-def getGmsh(Lx, Ly, Lz, res):
-    import os.path
-    if not os.path.isfile('mesh.msh'):
-        gmshBoxMesh(Lx, Ly, Lz, res)
-
-
-def gmshBoxMesh(Lx, Ly, Lz, res):
-    import gmsh
-    gmsh.initialize()
-    gmsh.model.add("out")
-    #gmsh.model.occ.addBox(-Lx/2, -Lx/2, -Lx/2, Lx, Lx, Lx )
-    gmsh.model.occ.addBox(0, 0, 0, Lx, Lx, Lx )
-    gmsh.model.occ.synchronize()
-    gmsh.model.mesh.setSize(gmsh.model.getEntities(0), Lx/3)
-    #gmsh.model.mesh.setSize([(0, 1)], 0.2)
-    gmsh.model.mesh.generate(3)
-    gmsh.write("mesh.msh")
-    gmsh.finalize()
-
-
-# import pygmsh
-# class msh:
-#     def __init__(self, Lx, Ly, Lz, mesh_res_min, mesh_res_max=[]):
-#         #geom = pygmsh.geo.Geometry()
-#         if not mesh_res_max:
-#             mesh_res_max = 10*mesh_res_min
-#         self.Lx = Lx
-#         self.Ly = Ly
-#         self.Lz = Lz
-#         self.mesh_res_min = mesh_res_min
-#         self.mesh_res_max = mesh_res_max
-#         self.mesh_refine_pts = []
-#         with pygmsh.geo.Geometry() as geom:
-#
-#             rectangle = geom.add_rectangle(0.0, self.Lx, 0.0, self.Ly, 0, self.mesh_res_max)
-#             mesh = geom.generate_mesh(dim=2)
-#             pygmsh.write("test.msh")
-#
-#         #pygmsh.write("test.msh")
-#         #return Mesh("test.msh")
-#
-#     def refine(self, points):
-#         with pygmsh.geo.Geometry() as geom:
-#             rectangle = geom.add_rectangle(0.0, self.Lx, 0.0, self.Ly, 0, self.mesh_res_max)
-#             pts = [geom.add_point(p) for p in points]
-#             [geom.in_surface(p, rectangle) for p in pts]
-#
-#             field0 = geom.add_boundary_layer(
-#                 nodes_list=pts,
-#                 lcmin=self.mesh_res_min,
-#                 lcmax=self.mesh_res_max,
-#                 distmin=self.mesh_res_min,
-#                 distmax=self.mesh_res_max,
-#             )
-#             geom.set_background_mesh([field0], operator="Min")
-#             #return self.get_mesh()
-#             mesh = geom.generate_mesh(dim=2)
-#             pygmsh.write("test.msh")
-#         return Mesh("test.msh")
-#
-#     def get_mesh(self):
-#         mesh = self.geom.generate_mesh(dim=2)
-#         pygmsh.write("test.msh")
-#         return Mesh("test.msh")
-#
-
-
-
-# def msh(points, Lx, Ly, Lz, mesh_res_min, mesh_res_max=[]):
-#
-#     with pygmsh.geo.Geometry() as geom:
-#         rectangle = geom.add_rectangle(0.0, Lx, 0.0, Ly, 0, mesh_res_max)
-#
-#
-#         pts = [geom.add_point(p) for p in points]
-#         [geom.in_surface(p, rectangle) for p in pts]
-#
-#         field0 = geom.add_boundary_layer(
-#             nodes_list=pts,
-#             lcmin=mesh_res_min,
-#             lcmax=mesh_res_max,
-#             distmin=mesh_res_min,
-#             distmax=mesh_res_max,
-#         )
-#         geom.set_background_mesh([field0], operator="Min")
-#
-#         mesh = geom.generate_mesh(dim=2)
-#         pygmsh.write("test.msh")
-#         return Mesh("test.msh")
-#         print('writen')
-
-
-
-
-
-
-
-#
-# import pygmsh, copy, gmsh
-# class msh:
-#     def __init__(self, Lx, Ly, Lz, mesh_coarse = [], mesh_fine = []):
-#         if not mesh_coarse:
-#             self.mesh_coarse = Lx/10
-#         if not mesh_fine:
-#             self.mesh_fine = self.mesh_coarse/5
-#         self.Lx = Lx
-#         self.Ly = Ly
-#         self.Lz = Lz
-#         #
-#         #
-#
-#         #self.working = copy.deepcopy(self.base)
-#
-#     def remesh(self, pts):
-#         with pygmsh.geo.Geometry() as geom:
-#             geom = pygmsh.geo.Geometry()
-#
-#             rect = geom.add_rectangle(0.0, 1., 0.0, 1., 0)
-#             #msh_pts = [geom.add_point(p + [0], self.mesh_fine) for p in pts]
-#             #pt1 = geom.add_point([.2,.2,0],.1)
-#
-#             field1 = geom.add_boundary_layer(
-#                 nodes_list=[geom.add_point([.2,.2,0],.1)],
-#                 lcmin=0.01,
-#                 lcmax=0.1,
-#                 distmin=0.0,
-#                 distmax=0.2,
-#                 )
-#
-#
-#             geom.set_background_mesh([field1], operator='Min')
-#             #[geom.in_surface(msh_pt, rect) for msh_pt in msh_pts]
-#             #geom.set_recombined_surfaces([rect.surface])
-#             #geom.set_background_mesh([field0, field1], operator="Min")
-#
-#             #gmsh.option.setNumber("Mesh.CharacteristicLengthExtendFromBoundary", 0)
-#             #opt_mesh = pygmsh.optimize(mesh,method="")
-#             mesh = geom.generate_mesh(dim=2)
-#             mesh.write("test.vtk")
-#
-#             pygmsh.write("test.msh")
-#
-#         print('mesh written')
-
-    # def remesh(self, pts, mesh_res_fine):
-    #     self.working = copy.deepcopy(self.base)
-    #     p1 = self.working.add_point([.5, .5, 0.], mesh_res)
-    #     self.working.in_surface(p1, se)
+        import scipy.sparse as sp
+        import matplotlib.pyplot as plt
+        indptr, indices, data = petsc_mat.getValuesCSR()
+        scipy_mat = sp.csr_matrix((data, indices, indptr), shape=petsc_mat.getSize())
+        plt.spy(scipy_mat)
+        plt.savefig('Jacobian.png')
+        #plt.show()
