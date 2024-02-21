@@ -7,14 +7,15 @@ def print(*args, **kwargs):
     PETSc.Sys.Print(*args,flush=True)
 
 class writer:
-    def __init__(self, names, field_names, fields, mesh):
+    def __init__(self, names, field_names, fields, mesh, filename = "output/output.pvd"):
         #Names of native fields and user-defined must be treated differently.
         self.names = names  #Names of calculated fields
         self.field_names = field_names  #Names of user-defined fields
         self.fields = fields    #User-defined fields
         self.mesh = mesh
+        self.filename = filename
 
-        self.file = File("output/output.pvd")
+        self.file = File(self.filename)
 
         # Demanding vectors of length 3. TODO: REvamp. This excludes arrays in native variables. Paraview okay with Arrays (not labelled vectors. Where issue? Firedrake?
         for i in range(len(fields)):
