@@ -93,22 +93,16 @@ params = {'snes_monitor': None,
 
 
 # ~~~ Initial conditions ~~~ #
-def create_bubble(centre, radius):
-    centre = as_vector(centre)
-    r = sqrt(inner(x-centre, x-centre))
-    return .5*(1.-tanh((r-radius)/(2.*interface_width)))
 
-p0 = create_bubble( [.2*Lx, .2*Lx, 0], .1*Lx)
-p1 = create_bubble( [.8*Lx, .8*Lx, 0], .1*Lx)
-p2 = 1/(1+2.71**(-2.0*50.0*(x[2]-0.1)))*(x[2]**(0.1))
+p_surface = 1/(1+2.71**(2.0*50.0*(x[2]-0.1)))#*(x[2]**(0.1))
 
-# sigma = 3
-# maxAmplitude = 5
-# xc = random.random()
-# yc = random.random()
 
-# p3 = ((x[0]-xc)**2 + (x[1]-yc)**2)/(2*sigma**2)
-U.sub(1).interpolate(create_bubble([x[0], x[1], 0], .001*Lx))
+r = 0.1*Lx #radius of bubble
+arr_centres = define_centres_arr(0,1,0.2,Lx,3)
+p_bubbles = sum_bubbles(arr_centres,r,x,interface_width)
+
+p = max_value(p_bubbles,p_surface)
+U.sub(1).interpolate(p)
 
 # Since using a quadratic potential, we can just get initial values from expansion point
 pt = pot.additional_fields['expansion_point']

@@ -93,22 +93,15 @@ params = {'snes_monitor': None,
 
 
 # ~~~ Initial conditions ~~~ #
-def create_bubble(centre, radius):
-    centre = as_vector(centre)
-    r = sqrt(inner(x-centre, x-centre))
-    return .5*(1.-tanh((r-radius)/(2.*interface_width)))
+p_surface = 1/(1+2.71**(2.0*50.0*(x[1]-0.1)))
 
-# p0 = create_bubble( [.2*Lx, .2*Lx, 0], .1*Lx)
-# p1 = create_bubble( [.8*Lx, .8*Lx, 0], .1*Lx)
-# p2 = 1/(1+2.71**(-2.0*50.0*(x[2]-0.1)))*(x[2]**(0.1))
+arr_centres = define_centres_arr(0,1,0.2,Lx,2)
 
-# sigma = 3
-# maxAmplitude = 5
-# xc = random.random()
-# yc = random.random()
+r = 0.1*Lx #radius of bubbles
 
-# p3 = ((x[0]-xc)**2 + (x[1]-yc)**2)/(2*sigma**2)
-U.sub(1).interpolate(create_bubble([x[0],0], .01*Lx))
+p_bubbles = sum_bubbles(arr_centres,r,x,interface_width)
+p = max_value(p_bubbles,p_surface)
+U.sub(1).interpolate(p)
 
 # Since using a quadratic potential, we can just get initial values from expansion point
 pt = pot.additional_fields['expansion_point']
@@ -134,7 +127,7 @@ scheme = time_stepping_scheme(U, test_U, [F_diffusion, F_phase], [],
     params=params)
 
 field_names = ['c', 'ps', 'P', 'mu']#, 'ca', 'cb']
-writer = writer([ 'cmesh', 'phase'], field_names,[eval(f) for f in field_names],mesh,"output_2D/output.pvd")
+writer = writer([ 'cmesh', 'phase'], field_names,[eval(f) for f in field_names],mesh,"output_2D_testbubble/output.pvd")
 
 solve_time_series(scheme, writer,
     t_range = [0, 5e-2, 1e4],
