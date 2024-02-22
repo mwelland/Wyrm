@@ -1,5 +1,6 @@
 from firedrake import *
 from firedrake.petsc import PETSc
+from numpy import random
 
 
 def print(*args, **kwargs):
@@ -199,3 +200,43 @@ class time_stepping_scheme:
         plt.spy(scipy_mat)
         plt.savefig('Jacobian.png')
         #plt.show()
+
+def sum_bubbles(arr_centres,r,x,interface_width):
+    #adds bubbles given a list of centres and radius
+    def create_bubble(centre, radius):
+        #creates single bubble
+        centre = as_vector(centre)
+        r = sqrt(inner(x-centre, x-centre))
+        return .5*(1.-tanh((r-radius)/(2.*interface_width)))
+    
+    p_last = 0
+    for i in range(len(arr_centres)):
+        psum = max_value(p_last,create_bubble(arr_centres[i],r))
+        p_last = psum
+    return psum
+
+def define_centres_arr(lower_edge,upper_edge,step_size,Lx,dims, rand = False, height = 0):
+    nrow = int((((upper_edge - lower_edge)/step_size) + 1)**(dims-1))
+    print(nrow)
+    arr = np.zeros((nrow,dims))
+    arr[:,dims-1] = height
+    a = [lower_edge]*(dims-1)
+    for i in range(len(arr)):
+            
+        for j in range(dims-1):
+            
+            arr[i,j] = a[j]*Lx
+            if rand == True:
+                arr[i,j] = random.uniform(lower_edge,upper_edge)
+
+        if dims == 3:
+            a[1] += step_size
+            if a[1] > upper_edge:
+                a[1] = 0
+                a[0] += step_size
+        elif dims == 2:
+            a[0] += step_size
+        else:
+            print("Invalid number of dimensions entered.")
+            break
+    return arr
