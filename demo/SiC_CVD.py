@@ -98,7 +98,7 @@ p_surface = 1/(1+2.71**(2.0*50.0*(x[2]-0.1)))#*(x[2]**(0.1))
 
 
 r = 0.1*Lx #radius of bubble
-arr_centres = define_centres_arr(0,1,0.2,Lx,3)
+arr_centres = define_centres_arr(0,1,0.2,Lx,3,True,0.1)
 p_bubbles = sum_bubbles(arr_centres,r,x,interface_width)
 
 p = max_value(p_bubbles,p_surface)

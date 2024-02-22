@@ -227,7 +227,7 @@ def define_centres_arr(lower_edge,upper_edge,step_size,Lx,dims, rand = False, he
             
             arr[i,j] = a[j]*Lx
             if rand == True:
-                arr[i,j] = random.uniform(lower_edge,upper_edge)
+                arr[i,j] = round(random.uniform(lower_edge,upper_edge),1)
 
         if dims == 3:
             a[1] += step_size
