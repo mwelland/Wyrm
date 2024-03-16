@@ -17,7 +17,7 @@ Lz = Lx/1
 
 # Coarse mesh should have an 'appreciable' resolution. Fine mesh is scale of feature of interest
 mesh_res_coarse = Lx/4
-mesh_res_final = interface_width #target mesh resolution
+mesh_res_final = interface_width/2 #target mesh resolution
 mg_levels = ceil( log(mesh_res_coarse/mesh_res_final,2) )
 print('Using {} levels of refinement'.format(mg_levels))
 
@@ -84,10 +84,10 @@ params = {'snes_monitor': None,
           #'snes_linesearch_type': 'bt',
 
           #Direct
-          #'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
+          'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
 
           #Geometric multigrid
-          'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps',
+          #'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps',
           }
 
 
@@ -98,7 +98,7 @@ p_surface = 1/(1+2.71**(2.0*50.0*(x[2]-0.1)))#*(x[2]**(0.1))
 
 
 r = 0.1*Lx #radius of bubble
-arr_centres = define_centres_arr(0,1,0.2,Lx,3,True,0.1)
+arr_centres = define_centres_arr(0,1,0.2,Lx,3,False,0.1)
 p_bubbles = sum_bubbles(arr_centres,r,x,interface_width)
 
 p = max_value(p_bubbles,p_surface)
@@ -107,14 +107,15 @@ U.sub(1).interpolate(p)
 # Since using a quadratic potential, we can just get initial values from expansion point
 pt = pot.additional_fields['expansion_point']
 ci = as_matrix([
-    [pt['c0_a']/pt['V_a'], pt['c1_a']/pt['V_a']],
-    [pt['c0_b']/pt['V_b'], 0]])
+    [pt['c0_a']/pt['V_a'], 0],
+    [pt['c0_b']/pt['V_b'], pt['c1_b']/pt['V_b']]])
 U.sub(0).interpolate(dot(ps,ci)/c_scale)
 
 
 # Boundary conditions
 bcs = [
     DirichletBC(V.sub(1), Constant(0), 6),
+    DirichletBC(V.sub(0),as_vector([0.9,0.2]),6),
     #DirichletBC(V.sub(0), ci1/c_scale, 2),
     #DirichletBC(V.sub(3),Constant([0,0,0]), boundaries),
     ]
@@ -128,10 +129,10 @@ scheme = time_stepping_scheme(U, test_U, [F_diffusion, F_phase], [],
     params=params)
 
 field_names = ['c', 'ps', 'P', 'mu']#, 'ca', 'cb']
-writer = writer([ 'cmesh', 'phase'], field_names,[eval(f) for f in field_names],mesh,"output2/output.pvd")
+writer = writer([ 'cmesh', 'phase'], field_names,[eval(f) for f in field_names],mesh,"output_SiC_2phase_3d/output.pvd")
 
 solve_time_series(scheme, writer,
     t_range = [0, 5e-2, 1e4],
-    iter_t_max = 100,
+    iter_t_max = 250,
     eps_t_target = .1,
     eps_s_target = .2)

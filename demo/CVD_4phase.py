@@ -76,7 +76,7 @@ interface_area =  multiphase(phi, interface_width)
 interface_energy = inner(as_vector([5000]*comb(m,2)), as_vector(interface_area))
 
 #Load potential
-pot = load_potential('CVD_4phase')
+pot = load_potential('CVD_4phase_pot')
 
 response = pot.grad([ci for ci in c]+p_phase)
 mu = as_vector(response[:n])
