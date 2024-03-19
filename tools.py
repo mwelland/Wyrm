@@ -1,6 +1,8 @@
 from firedrake import *
 from firedrake.petsc import PETSc
 from numpy import random
+from firedrake.__future__ import interpolate
+
 
 
 def print(*args, **kwargs):
@@ -36,22 +38,24 @@ class writer:
             elif fd ==2:
                 space = TensorFunctionSpace(mesh, "CG", 1, symmetry=True)
             return space
-        self.interps = [Interpolator(field, funcSpace(field, mesh)) for field in fields] #List of interpolator objects
+        #self.interps = [Interpolator(field, funcSpace(field, mesh)) for field in fields] #List of interpolator objects
+        self.interps = [interpolate(field, funcSpace(field, mesh)) for field in fields] #List of interpolator objects
         #self.fcns = [i.interpolate().rename(name, name) for i,name in zip(self.interps, self.field_names)]   # list of functions to hold interpolants.
-        self.fcns = [i.interpolate() for i in self.interps]   # list of functions to hold interpolants.
+        #self.fcns = [i.interpolate() for i in self.interps]   # list of functions to hold interpolants.
+        self.fcns = [assemble(i) for i in self.interps]   # list of functions to hold interpolants.
         [f.rename(name, name) for f, name in zip(self.fcns, self.field_names)]
 
     def write(self, U, time):
         def get_functions(U, names): # Returns tuple of function with correct names
-            sol = U.split()
+            sol = U.subfunctions
             for i in range(len(sol)):
-               sol[i].rename(names[i],names[i])
+                sol[i].rename(names[i],names[i])
             return sol
 
         #print('Writing solution')
         flds = list(get_functions(U, self.names))
 
-        [i.interpolate(output=f) for i,f in zip(self.interps, self.fcns)]  #updates all output functions
+        [assemble(i) for i,f in zip(self.interps, self.fcns)]  #updates all output functions
 
         #print(flds)
         #flds = flds[:-1]
@@ -78,8 +82,8 @@ def solve_time_series(scheme, writer,
     t, dt, t_end = t_range
     iter_t = 0
 
-    if not eps_t_limit:
-        eps_t_limit = 2*eps_t_target
+    # if not eps_t_limit:
+    #     eps_t_limit = 2*eps_t_target
 
     if not eps_s_limit:
         eps_s_limit = 2*eps_s_target
@@ -104,9 +108,11 @@ def solve_time_series(scheme, writer,
         if iter_t == 1:
             scheme.solver.parameters.pop('snes_view',None) # Unset the snes_viewer so as not to repeat it.
 
-        if proceed and eps_t>eps_t_limit:
-            print('Time error limit exceeded')
-            proceed = False
+        if proceed:
+            if eps_t_limit is not None:
+                if eps_t>eps_t_limit:
+                    print('Time error limit exceeded')
+                    proceed = False
 
         if proceed and eps_s>eps_s_limit:
             print('Max solution change limit exceeded')
@@ -201,19 +207,25 @@ class time_stepping_scheme:
         plt.savefig('Jacobian.png')
         #plt.show()
 
-def sum_bubbles(arr_centres,r,x,interface_width):
-    #adds bubbles given a list of centres and radius
-    def create_bubble(centre, radius):
+def create_bubble(centre, r, x, interface_width):
+    def create_bbl(centre, radius, x, interface_width):
         #creates single bubble
         centre = as_vector(centre)
         r = sqrt(inner(x-centre, x-centre))
         return .5*(1.-tanh((r-radius)/(2.*interface_width)))
-    
-    p_last = 0
-    for i in range(len(arr_centres)):
-        psum = max_value(p_last,create_bubble(arr_centres[i],r))
-        p_last = psum
-    return psum
+
+    if type(centre) is list:
+        #TODO: If radii is list of same length, zip and make multiples
+        p_bubbles = [create_bbl(c, r, x, interface_width) for c in centre]
+        return max_values(p_bubbles)
+    else:
+        return create_bbl(centre, r, x, interface_width)
+
+def max_values(lst):
+    if len(lst)<=1:
+        return lst[0]
+    else:
+        return max_value(lst[0], max_values(lst[1:]))
 
 def define_centres_arr(lower_edge,upper_edge,step_size,Lx,dims, rand = False, height = 0):
     nrow = int((((upper_edge - lower_edge)/step_size) + 1)**(dims-1))
@@ -222,9 +234,9 @@ def define_centres_arr(lower_edge,upper_edge,step_size,Lx,dims, rand = False, he
     arr[:,dims-1] = height
     a = [lower_edge]*(dims-1)
     for i in range(len(arr)):
-            
+
         for j in range(dims-1):
-            
+
             arr[i,j] = a[j]*Lx
             if rand == True:
                 arr[i,j] = round(random.uniform(lower_edge,upper_edge),1)

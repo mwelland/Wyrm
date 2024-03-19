@@ -21,7 +21,7 @@ mesh_res_final = interface_width/2 #target mesh resolution
 mg_levels = ceil( log(mesh_res_coarse/mesh_res_final,2) )
 print('Using {} levels of refinement'.format(mg_levels))
 
-mesh = SquareMesh(round(Lx/mesh_res_coarse), round(Ly/mesh_res_coarse), Lx/x_scale, Ly/x_scale)
+mesh = RectangleMesh(round(Lx/mesh_res_coarse), round(Ly/mesh_res_coarse), Lx/x_scale, Ly/x_scale)
 
 hierarchy = MeshHierarchy(mesh, mg_levels)
 mesh = hierarchy[-1]
@@ -54,7 +54,7 @@ c = c_scale*cmesh
 p_phase = phase**3*(6*phase**2-15*phase+10)
 g_phase = phase**2*(1-phase)**2
 interface_area = 3*( interface_width**2*inner(gr(phase),gr(phase)) + g_phase)
-interface_energy = 5000
+interface_energy = 1e5
 
 ps = as_vector([p_phase, 1-p_phase])
 
@@ -80,28 +80,29 @@ params = {'snes_monitor': None,
           'snes_atol':1e-6,
           'snes_rtol':1e-20,
           'snes_view': None,
-          'ksp_converged_reason': None,
+
           #'snes_linesearch_type': 'bt',
 
           #Direct
-          #'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
+          'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
 
           #Geometric multigrid
-          'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps',
+          'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps', 'ksp_converged_reason': None,
+
           }
 
 
 
 # ~~~ Initial conditions ~~~ #
-p_surface = 1/(1+2.71**(2.0*50.0*(x[1]-0.1)))
+#p_surface = 1/(1+2.71**(2.0*50.0*(x[1]-0.1)))
+# Rember to always start with tanh - it makes hte solver happier
+surface_thickness = interface_width*0
+#p_surface = .5*(1.-tanh((x[1]-surface_thickness)/(2.*interface_width)))
 
 arr_centres = define_centres_arr(0,1,0.2,Lx,2)
 
-r = 0.1*Lx #radius of bubbles
-
-p_bubbles = sum_bubbles(arr_centres,r,x,interface_width)
-p = max_value(p_bubbles,p_surface)
-U.sub(1).interpolate(p)
+p_bubbles = create_bubble(arr_centres[2], interface_width*5, x, interface_width)
+U.sub(1).interpolate(p_bubbles)
 
 # Since using a quadratic potential, we can just get initial values from expansion point
 pt = pot.additional_fields['expansion_point']
@@ -110,17 +111,13 @@ ci = as_matrix([
     [pt['c0_b']/pt['V_b'], pt['c1_b']/pt['V_b']]])
 U.sub(0).interpolate(dot(ps,ci)/c_scale)
 
-print("######################")
-print(pt['c0_b']/pt['V_b'])
+#Define the vector of concentrations in Argonne and use in the initial conditions and the Dirichlet BCs
+c_Ar0 = as_vector(ci[1]) + .02*as_vector([1,-1])
 
-print("######################")
-print(pt['c1_b']/pt['V_b'])
-
-print("######################")
 # Boundary conditions
 bcs = [
     DirichletBC(V.sub(1), Constant(0), 4),
-    DirichletBC(V.sub(0),as_vector([0.9,0.01]),4),
+    DirichletBC(V.sub(0), c_Ar0,4),
     #DirichletBC(V.sub(0), ci1/c_scale, 2),
     #DirichletBC(V.sub(3),Constant([0,0,0]), boundaries),
     ]
