@@ -74,7 +74,7 @@ interface_area =  multiphase(phi, interface_width)
 #                     + interface_width**2*( pc*gr(pb) - pb*gr(pc) )**2 + pc**2*pb**2*(1+a*pa**2)
 #                     + interface_width**2*( pc*gr(pa) - pa*gr(pc) )**2 + pc**2*pa**2*(1+a*pb**2))
 
-interface_energy = inner(as_vector([1e5]*comb(m,2)), as_vector(interface_area)) + 1e5*phi[0]**2*phi[1]**2*phi[2]**2*phi[3]**2
+interface_energy = inner(as_vector([1e5]*comb(m,2)), as_vector(interface_area)) #+ 1e5*phi[0]**2*phi[1]**2*phi[2]**2*phi[3]**2
 #interface_energy = inner(as_vector([5000, 5000, 5000000, 5000, 5000, 5000]), as_vector(interface_area))
 
 
