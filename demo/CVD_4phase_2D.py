@@ -74,8 +74,8 @@ interface_area =  multiphase(phi, interface_width)
 #                     + interface_width**2*( pc*gr(pb) - pb*gr(pc) )**2 + pc**2*pb**2*(1+a*pa**2)
 #                     + interface_width**2*( pc*gr(pa) - pa*gr(pc) )**2 + pc**2*pa**2*(1+a*pb**2))
 
-interface_energy = inner(as_vector([1e5]*comb(m,2)), as_vector(interface_area)) #+ 1e5*phi[0]**2*phi[1]**2*phi[2]**2*phi[3]**2
-#interface_energy = inner(as_vector([5000, 5000, 5000000, 5000, 5000, 5000]), as_vector(interface_area))
+#interface_energy = inner(as_vector([1e5]*comb(m,2)), as_vector(interface_area)) #+ 1e5*phi[0]**2*phi[1]**2*phi[2]**2*phi[3]**2
+interface_energy = inner(as_vector([1e5, 1e5, 1e5, 5e5, 5e5, 5e5]), as_vector(interface_area))
 
 
 #Load potential
@@ -135,7 +135,7 @@ params = {'snes_monitor': None,
           #'snes_linesearch_type': 'bt',
 
           #Direct
-          'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
+          #'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
 
           #Geometric multigrid
           'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps', 'ksp_converged_reason': None,
@@ -151,7 +151,7 @@ p_n = as_vector([-1,3,1,0])
 ps = inner(p_n,ps)
 
 field_names = ['c', 'ps', 'P', 'mu']
-writer = writer(['cmesh', 'phase'], field_names, [eval(f) for f in field_names], mesh, "output_customint_0902BC/output.pvd")
+writer = writer(['cmesh', 'phase'], field_names, [eval(f) for f in field_names], mesh, "output_CVD_2D/output.pvd")
 
 solve_time_series(scheme, writer,
     t_range = [0, 5e-4, 1e4],
