@@ -62,7 +62,7 @@ ps = as_vector(p_phase)
 # Build multiphase energy -> to be moved to thermo potential.
 def multiphase(p, interface_width):
     def antisymmetric_gradient(pa, pb):
-        return 3*(interface_width**2*( pa*gr(pb) - pb*gr(pa) )**2 + pa**2*pb**2*(1+50*(pa+pb-1)**2))
+        return 3*(interface_width**2*( pa*gr(pb) - pb*gr(pa) )**2 + pa**2*pb**2*(1+100*(pa+pb-1)**2))
     return [antisymmetric_gradient(p[i], p[j]) for i in range(len(p)) for j in range(i)]
 interface_area =  multiphase(phi, interface_width)
 
