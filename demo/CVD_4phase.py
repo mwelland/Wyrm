@@ -6,7 +6,7 @@ from math import log, ceil, comb
 
 M_phi = 1e-3#1e-8
 D = 1e-3 #m^2/s = .1 cm^2/s
-interface_width = .05
+interface_width = .1*2
 
 x_scale = 1
 c_scale = 1
@@ -99,7 +99,7 @@ rad = interface_width*5
 
 p0 = create_bubble( (.2*Lx, .2*Lx, 0), rad,x, interface_width)
 p1 = create_bubble( (.8*Lx, .8*Lx, 0), rad,x, interface_width)
-p2 = create_bubble( (.2*Lx, .8*Lx, 0), rad,x, interface_width)
+p2 = 0*create_bubble( (.2*Lx, .8*Lx, 0), rad,x, interface_width)
 p_init = as_vector([p0,p1,p2])
 
 U.sub(1).interpolate(p_init)
@@ -133,10 +133,10 @@ params = {'snes_monitor': None,
           #'snes_linesearch_type': 'bt',
 
           #Direct
-          'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
+          #'pc_type': 'lu', 'ksp_type': 'preonly', 'pc_factor_mat_solver_type': 'mumps',
 
           #Geometric multigrid
-          #'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps',
+          'ksp_type':'fgmres', 'pc_type':'mg', 'mg_coarse_pc_type':'lu','mg_coarse_pc_factor_mat_solver_type':'mumps', 'ksp_monitor':None,
 
           }
 
@@ -152,7 +152,7 @@ field_names = ['c', 'ps', 'P', 'mu']
 writer = writer(['cmesh', 'phase'], field_names, [eval(f) for f in field_names], mesh, "output_4P_3D/output_4P_3D.pvd")
 
 solve_time_series(scheme, writer,
-    t_range = [0, 5e-2, 1e4],
+    t_range = [0, 5e-4, 1e4],
     iter_t_max = 250,
     eps_t_target = .1,
     eps_s_target = .2)
