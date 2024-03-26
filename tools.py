@@ -1,6 +1,6 @@
 from firedrake import *
 from firedrake.petsc import PETSc
-from numpy import random
+from numpy import random, ndarray
 from firedrake.__future__ import interpolate
 
 
@@ -214,7 +214,7 @@ def create_bubble(centre, r, x, interface_width):
         r = sqrt(inner(x-centre, x-centre))
         return .5*(1.-tanh((r-radius)/(2.*interface_width)))
 
-    if type(centre) is list:
+    if type(centre) is list or  type(centre) is ndarray:
         #TODO: If radii is list of same length, zip and make multiples
         p_bubbles = [create_bbl(c, r, x, interface_width) for c in centre]
         return max_values(p_bubbles)
@@ -229,7 +229,7 @@ def max_values(lst):
 
 def define_centres_arr(lower_edge,upper_edge,step_size,Lx,dims, rand = False, height = 0):
     nrow = int((((upper_edge - lower_edge)/step_size) + 1)**(dims-1))
-    print(nrow)
+    
     arr = np.zeros((nrow,dims))
     arr[:,dims-1] = height
     a = [lower_edge]*(dims-1)
