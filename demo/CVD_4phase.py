@@ -12,7 +12,7 @@ x_scale = 1
 c_scale = 1
 
 #Lx = 10
-Lx = 10#interface_width*60 
+Lx = 5 #interface_width*60 
 Ly = Lx/1
 Lz = 4
 
